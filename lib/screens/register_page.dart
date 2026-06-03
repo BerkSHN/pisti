@@ -1,18 +1,16 @@
 import 'package:flutter/material.dart';
-import 'package:pisti_app/main.dart';
-import 'package:pisti_app/screens/home_page.dart';
 import 'package:pisti_app/theme/app_colors.dart';
-import 'package:pisti_app/screens/register_page.dart';
 
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+class RegisterScreen extends StatefulWidget {
+  const RegisterScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<RegisterScreen> createState() => _RegisterScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _RegisterScreenState extends State<RegisterScreen> {
   bool obscurePassword = true;
+  bool obscurePassword2 = true;
 
   @override
   Widget build(BuildContext context) {
@@ -20,7 +18,7 @@ class _LoginScreenState extends State<LoginScreen> {
       backgroundColor: kBg,
       body: Stack(
         children: [
-          // Background Glow
+          // Background Glow (same as login)
           Positioned(
             top: -120,
             right: -100,
@@ -33,7 +31,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           ),
-
           Positioned(
             bottom: -120,
             left: -100,
@@ -49,15 +46,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
           SafeArea(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 24,
-                vertical: 20,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
               child: Column(
                 children: [
                   const SizedBox(height: 40),
 
-                  // Logo
+                  // Logo (same style)
                   Container(
                     width: 90,
                     height: 90,
@@ -76,7 +70,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     child: const Center(
                       child: Text(
-                        "☺️",
+                        "🔥",
                         style: TextStyle(fontSize: 40),
                       ),
                     ),
@@ -97,7 +91,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 8),
 
                   Text(
-                    "Yeni insanlarla tanış,\nberaber etkinliklere katıl.",
+                    "Hemen kayıt ol,\netkinliklere katılmaya başla.",
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: kTextSub,
@@ -108,7 +102,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   const SizedBox(height: 50),
 
-                  // Login Card
+                  // REGISTER CARD
                   Container(
                     padding: const EdgeInsets.all(22),
                     decoration: BoxDecoration(
@@ -126,8 +120,22 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: Column(
                       children: [
                         _inputField(
+                          hint: "Ad Soyad",
+                          icon: Icons.person_outline_rounded,
+                        ),
+
+                        const SizedBox(height: 14),
+
+                        _inputField(
                           hint: "E-posta",
                           icon: Icons.mail_outline_rounded,
+                        ),
+
+                        const SizedBox(height: 14),
+
+                        _inputField(
+                          hint: "Kullanıcı Adı",
+                          icon: Icons.alternate_email_rounded,
                         ),
 
                         const SizedBox(height: 14),
@@ -153,32 +161,34 @@ class _LoginScreenState extends State<LoginScreen> {
 
                         const SizedBox(height: 14),
 
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: () {},
-                            child: const Text(
-                              "Şifremi Unuttum",
-                              style: TextStyle(
-                                color: kPrimary,
-                                fontWeight: FontWeight.w700,
-                              ),
+                        _inputField(
+                          hint: "Şifre Tekrar",
+                          icon: Icons.lock_outline_rounded,
+                          obscure: obscurePassword2,
+                          suffix: IconButton(
+                            onPressed: () {
+                              setState(() {
+                                obscurePassword2 = !obscurePassword2;
+                              });
+                            },
+                            icon: Icon(
+                              obscurePassword2
+                                  ? Icons.visibility_off_outlined
+                                  : Icons.visibility_outlined,
+                              color: kTextSub,
                             ),
                           ),
                         ),
 
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 20),
 
                         SizedBox(
                           width: double.infinity,
                           height: 58,
                           child: ElevatedButton(
                             onPressed: () {
-                                Navigator.pushReplacement(
-                                    context,
-                                    MaterialPageRoute(builder: (_) => const MainShell()),
-                                  );
-                              },
+                              Navigator.pop(context);
+                            },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: kPrimary,
                               elevation: 0,
@@ -187,7 +197,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             ),
                             child: const Text(
-                              "Giriş Yap",
+                              "Kayıt Ol",
                               style: TextStyle(
                                 fontSize: 16,
                                 color: Colors.white,
@@ -203,57 +213,18 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 30),
 
                   Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          height: 1,
-                          color: kBorder,
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: Text(
-                          "veya",
-                          style: TextStyle(color: kTextSub),
-                        ),
-                      ),
-                      Expanded(
-                        child: Container(
-                          height: 1,
-                          color: kBorder,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  _socialButton(
-                    icon: "G",
-                    title: "Google ile devam et",
-                  ),
-
-
-                  const SizedBox(height: 35),
-
-                  Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        "Hesabın yok mu?",
+                        "Zaten hesabın var mı?",
                         style: TextStyle(color: kTextSub),
                       ),
                       TextButton(
                         onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const RegisterScreen(),
-                            ),
-                          );
+                          Navigator.pop(context);
                         },
                         child: const Text(
-                          "Kayıt Ol",
+                          "Giriş Yap",
                           style: TextStyle(
                             color: kPrimary,
                             fontWeight: FontWeight.w800,
@@ -261,7 +232,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ],
-                  )
+                  ),
                 ],
               ),
             ),
@@ -288,51 +259,11 @@ class _LoginScreenState extends State<LoginScreen> {
         style: const TextStyle(color: kText),
         decoration: InputDecoration(
           border: InputBorder.none,
-          prefixIcon: Icon(
-            icon,
-            color: kPrimary,
-          ),
+          prefixIcon: Icon(icon, color: kPrimary),
           suffixIcon: suffix,
           hintText: hint,
-          hintStyle: TextStyle(
-            color: kTextSub,
-          ),
+          hintStyle: TextStyle(color: kTextSub),
         ),
-      ),
-    );
-  }
-
-  Widget _socialButton({
-    required String icon,
-    required String title,
-  }) {
-    return Container(
-      height: 56,
-      decoration: BoxDecoration(
-        color: kCard,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: kBorder),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            icon,
-            style: const TextStyle(
-              color: kText,
-              fontWeight: FontWeight.w900,
-              fontSize: 18,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Text(
-            title,
-            style: const TextStyle(
-              color: kText,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
       ),
     );
   }

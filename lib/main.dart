@@ -3,7 +3,7 @@ import 'package:pisti_app/screens/home_page.dart';
 import 'package:pisti_app/screens/joined_page.dart';
 import 'package:pisti_app/screens/login_page.dart';
 import 'package:pisti_app/screens/profil_page.dart';
-
+import 'package:pisti_app/screens/map_page.dart';
 void main() {
   runApp(const PishtiApp());
 }
@@ -35,7 +35,7 @@ class _MainShellState extends State<MainShell> {
 
   final pages = [
     HomeScreen(),
-    Placeholder(), // Map
+    MapPage(), // Map
     JoinedPage(), // Favorites
     ProfileScreen(),
   ];
