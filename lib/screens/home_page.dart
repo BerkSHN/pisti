@@ -31,12 +31,85 @@ class HomeScreen extends StatefulWidget {
 
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
+
+  Future<void> _submitEvent() async {
+  // Basit boş alan kontrolü
+  if (_titleController.text.isEmpty || _locationController.text.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Lütfen etkinlik adı ve konum alanlarını doldurun!')),
+    );
+    return;
+  }
+
+  // FastAPI backend modeline (Pydantic) tam uyumlu veri objesi
+  final Map<String, dynamic> eventData = {
+    "title": _titleController.text,
+    "location": _locationController.text,
+    "time": _timeController.text.isEmpty ? "Bugün" : _timeController.text,
+    "max": int.tryParse(_maxPlayersController.text) ?? 10,
+    "desc": _descController.text,
+    "emoji": _selectedCategoryEmoji,
+    "category": _selectedCategoryLabel,
+    "categoryColor": "#FF6B00", // Hex String türünde renk kodu
+    "joined": 1,
+    "likes": 0,
+    "comments": 0, // Boş yorum listesi
+    "shares": 0,
+    "creator": "Eren",
+    "avatar": "E",
+    "avatarColor": "#10B981",
+    "tags": [_selectedCategoryLabel, "Yeni"],
+    "imageUrl": null
+  };
+
+  // İstek atılırken bir yükleme göstergesi ekleyebiliriz (opsiyonel)
+  // ApiService üzerinden servisi tetikliyoruz
+  final success = await ApiService.createEvent(eventData);
+
+  if (!mounted) return;
+
+  if (success) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Etkinlik başarıyla paylaşıldı! 🎉')),
+    );
+
+    // Form alanlarını temizle
+    _titleController.clear();
+    _locationController.clear();
+    _dateController.clear();
+    _timeController.clear();
+    _maxPlayersController.clear();
+    _descController.clear();
+    
+    // Formu kapat
+    _toggleCompose();
+
+    // Anasayfadaki listeyi yenilemek için senin getEvents yapını tetikleyen fonksiyon
+    _loadEvents(); 
+  } else {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Etkinlik paylaşılamadı. Backend loglarını kontrol edin.')),
+    );
+  }
+}
+
   final _scrollController = ScrollController();
   int _selectedCat = -1;
   bool _isComposeExpanded = false;
   late AnimationController _composeAnimCtrl;
   late Animation<double> _composeAnim;
   int _bottomNavIndex = 0;
+  final _titleController = TextEditingController();
+  final _locationController = TextEditingController();
+  final _dateController = TextEditingController();
+  final _timeController = TextEditingController();
+  final _maxPlayersController = TextEditingController();
+  final _descController = TextEditingController();
+
+// Seçili kategori emojisi ve rengini yönetmek için (Örnek varsayılan değerler)
+  String _selectedCategoryLabel = 'Spor';
+  String _selectedCategoryEmoji = '🏀';
+  Color _selectedCategoryColor = const Color(0xFFFF6B00);
 
   // Mutable joined counts per event id
   final Map<String, int> _joinedCounts = {};
@@ -78,6 +151,12 @@ void initState() {
   void dispose() {
     _scrollController.dispose();
     _composeAnimCtrl.dispose();
+    _titleController.dispose();
+    _locationController.dispose();
+    _dateController.dispose();
+    _timeController.dispose();
+    _maxPlayersController.dispose();
+    _descController.dispose();
     super.dispose();
   }
 
@@ -211,30 +290,46 @@ void initState() {
                 const SizedBox(width: 12),
                 Expanded(
                   child: GestureDetector(
-                    onTap: _toggleCompose,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-                      decoration: BoxDecoration(
-                        color: kCardElevated,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: kBorder),
-                      ),
-                      child: Row(
-                        children: [
-                          Text(
-                            'Ne yapmak istiyorsun?',
-                            style: TextStyle(
-                              color: kTextSub,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const Spacer(),
-                          const Text('🎯', style: TextStyle(fontSize: 16)),
-                        ],
-                      ),
-                    ),
-                  ),
+  onTap: () {
+    if (_isComposeExpanded) {
+      // Form açıksa FastAPI'ye pushla
+      _submitEvent();
+    } else {
+      // Form kapalıysa formu genişlet/aç
+      _toggleCompose();
+    }
+  },
+  child: Container(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+    decoration: BoxDecoration(
+      // Form açıkken dikkat çekmesi için ana rengini (Örn: Turuncu) verebilirsin, kapalıyken orijinal kCardElevated kalır
+      color: _isComposeExpanded ? const Color(0xFFFF6B00) : kCardElevated,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: _isComposeExpanded ? Colors.transparent : kBorder),
+    ),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.center, // Yazıyı ortalamak için
+      children: [
+        Text(
+          // Duruma göre metin değişiyor
+          _isComposeExpanded ? 'Etkinliği Paylaş' : 'Ne yapmak istiyorsun?',
+          style: TextStyle(
+            // Form açıkken arka plan turuncu olacağı için metni beyaz yapıyoruz
+            color: _isComposeExpanded ? Colors.white : kTextSub,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const Spacer(),
+        // Duruma göre sağdaki ikon veya emoji değişiyor
+        Text(
+          _isComposeExpanded ? '🚀' : '🎯', 
+          style: const TextStyle(fontSize: 16),
+        ),
+      ],
+    ),
+  ),
+),
                 ),
               ],
             ),
@@ -299,81 +394,106 @@ void initState() {
   }
 
   Widget _buildExpandedCompose() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Divider(color: kDivider, height: 1),
-          const SizedBox(height: 14),
-          GestureDetector(
-            onTap: () {},
-            child: Container(
-              height: 100,
-              decoration: BoxDecoration(
-                color: kCardElevated,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: kBorder, width: 1.5),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.add_photo_alternate_outlined, size: 28, color: kPrimary),
-                  const SizedBox(height: 6),
-                  Text('Fotoğraf ekle', style: TextStyle(fontSize: 13, color: kTextSub, fontWeight: FontWeight.w600)),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          _ComposeField(hint: '🎯  Etkinlik adı (ör. "Basketbol maçı")'),
-          const SizedBox(height: 8),
-          _ComposeField(hint: '📍  Konum'),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(child: _ComposeField(hint: '📅  Tarih')),
-              const SizedBox(width: 8),
-              Expanded(child: _ComposeField(hint: '🕐  Saat')),
-            ],
-          ),
-          const SizedBox(height: 8),
-          _ComposeField(hint: '👥  Maks. katılımcı sayısı'),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: kCardElevated,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: kBorder),
-            ),
-            child: TextField(
-              maxLines: 3,
-              style: const TextStyle(fontSize: 14, color: kText),
-              decoration: InputDecoration.collapsed(
-                hintText: '✍️  Açıklama ekle...',
-                hintStyle: TextStyle(color: kTextSub, fontSize: 14),
+  return Padding(
+    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Divider(color: kDivider, height: 1),
+        const SizedBox(height: 14),
+        // ... Fotoğraf ekle alanı aynı kalabilir
+        
+        // Etkinlik Adı
+        TextField(
+          controller: _titleController,
+          decoration: const InputDecoration(hintText: '🎯  Etkinlik adı (ör. "Basketbol maçı")'),
+        ),
+        const SizedBox(height: 8),
+        
+        // Konum
+        TextField(
+          controller: _locationController,
+          decoration: const InputDecoration(hintText: '📍  Konum'),
+        ),
+        const SizedBox(height: 8),
+        
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _dateController,
+                decoration: const InputDecoration(hintText: '📅  Tarih'),
               ),
             ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: _timeController,
+                decoration: const InputDecoration(hintText: '🕐  Saat'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        
+        // Maks Katılımcı
+        TextField(
+          controller: _maxPlayersController,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(hintText: '👥  Maks. katılımcı sayısı'),
+        ),
+        const SizedBox(height: 8),
+        
+        // Açıklama
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: kCardElevated,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: kBorder),
           ),
-          const SizedBox(height: 10),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: _categories.map((c) => Padding(
+          child: TextField(
+            controller: _descController,
+            maxLines: 3,
+            style: const TextStyle(fontSize: 14, color: kText),
+            decoration: InputDecoration.collapsed(
+              hintText: '✍️  Açıklama ekle...',
+              hintStyle: TextStyle(color: kTextSub, fontSize: 14),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        
+        // Kategori Seçim Alanı
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: _categories.map((c) {
+              final isSelected = _selectedCategoryLabel == c['label'];
+              return Padding(
                 padding: const EdgeInsets.only(right: 6),
-                child: _CategorySelectChip(
-                  label: c['label'] as String,
-                  emoji: c['icon'] as String,
+                child: ChoiceChip(
+                  label: Text(c['label'] as String),
+                  selected: isSelected,
+                  onSelected: (bool selected) {
+                    setState(() {
+                      _selectedCategoryLabel = c['label'] as String;
+                      _selectedCategoryEmoji = c['icon'] as String;
+                      // Kategoriye göre renk ataması yapabilirsiniz (Örn: Spor ise turuncu)
+                      if (_selectedCategoryLabel == 'Spor') _selectedCategoryColor = const Color(0xFFFF6B00);
+                      else _selectedCategoryColor = Colors.blue; 
+                    });
+                  },
                 ),
-              )).toList(),
-            ),
+              );
+            }).toList(),
           ),
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
+        ),
+        const SizedBox(height: 8),
+      ],
+    ),
+  );
+}
 
   // ── CATEGORIES ─────────────────────────────────────────────────────────────
 

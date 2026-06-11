@@ -20,5 +20,27 @@ class ApiService {
     "API Error ${response.statusCode}",
   );
   }
+
+  static Future<bool> createEvent(Map<String, dynamic> eventData) async {
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUrl/events"),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(eventData),
+      );
+
+      print("POST STATUS: ${response.statusCode}");
+      print("POST BODY: ${response.body}");
+
+      // FastAPI başarılı kayıt durumunda 200 veya 201 döner
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return true;
+      }
+      return false;
+    } catch (e) {
+      print("ApiService createEvent Hatası: $e");
+      return false;
+    }
+  }
   
 }
