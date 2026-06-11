@@ -3,6 +3,7 @@ import 'package:pisti_app/screens/home_page.dart';
 import 'package:pisti_app/screens/joined_page.dart';
 import 'package:pisti_app/screens/login_page.dart';
 import 'package:pisti_app/screens/profil_page.dart';
+import 'services/api_service.dart';
 
 void main() {
   runApp(const PishtiApp());
@@ -39,6 +40,8 @@ class _MainShellState extends State<MainShell> {
     JoinedPage(), // Favorites
     ProfileScreen(),
   ];
+
+  
 
   @override
   Widget build(BuildContext context) {

@@ -3,6 +3,10 @@ import 'package:flutter/services.dart';
 import 'dart:math' as math;
 import 'package:pisti_app/main.dart';
 import 'package:pisti_app/theme/app_colors.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:pisti_app/services/api_service.dart';
+
 final _categories = [
   {'icon': '🏀', 'label': 'Spor'},
   {'icon': '☕', 'label': 'Kahve'},
@@ -14,128 +18,7 @@ final _categories = [
   {'icon': '♟️', 'label': 'Satranç'},
 ];
 
-final _events = [
-  {
-    'id': 1,
-    'emoji': '🏀',
-    'title': 'Basketbol Maçı',
-    'location': 'Atatürk Spor Salonu, Kadıköy',
-    'time': 'Pazar 17:00',
-    'joined': 7,
-    'max': 10,
-    'category': 'Spor',
-    'creator': 'Berk Aydın',
-    'avatar': 'BA',
-    'avatarColor': Color(0xFFFF6B00),
-    'desc': 'Seviye fark etmez, herkes bekliyoruz! Forma getirmeye gerek yok.',
-    'tags': ['Açık seviye', 'Ücretsiz'],
-    'likes': 24,
-    'comments': 5,
-    'shares': 3,
-    'imageUrl': null,
-    'categoryColor': Color(0xFFFF6B00),
-  },
-  {
-    'id': 2,
-    'emoji': '☕',
-    'title': 'Sabah Kahvesi Buluşması',
-    'location': 'Moda Sahili, Kadıköy',
-    'time': 'Cumartesi 09:30',
-    'joined': 3,
-    'max': 6,
-    'category': 'Sosyal',
-    'creator': 'Selin Kaya',
-    'avatar': 'SK',
-    'avatarColor': Color(0xFFFFB020),
-    'desc': 'Deniz manzarasında sabah kahvesi içmek isteyen herkesi bekliyorum.',
-    'tags': ['Yeni gelenlere açık', 'Ücretsiz'],
-    'likes': 41,
-    'comments': 9,
-    'shares': 7,
-    'imageUrl': null,
-    'categoryColor': Color(0xFFFFB020),
-  },
-  {
-    'id': 3,
-    'emoji': '🚴',
-    'title': 'Boğaz Bisiklet Turu',
-    'location': 'Beşiktaş İskelesi',
-    'time': 'Pazar 08:00',
-    'joined': 11,
-    'max': 15,
-    'category': 'Spor',
-    'creator': 'Can Demiral',
-    'avatar': 'CD',
-    'avatarColor': Color(0xFF39D98A),
-    'desc': '~25 km rota, başlangıç seviyesine uygun tempo. Bisikletsizler için kiralık seçenek var.',
-    'tags': ['Bisiklet lazım', 'Ücretsiz'],
-    'likes': 67,
-    'comments': 14,
-    'shares': 11,
-    'imageUrl': null,
-    'categoryColor': Color(0xFF39D98A),
-  },
-  {
-    'id': 4,
-    'emoji': '🍷',
-    'title': 'Şarap Tadımı Akşamı',
-    'location': 'Nişantaşı, Private Mekan',
-    'time': 'Cuma 20:00',
-    'joined': 6,
-    'max': 8,
-    'category': 'Sosyal',
-    'creator': 'Elif Mert',
-    'avatar': 'EM',
-    'avatarColor': Color(0xFFFF6B6B),
-    'desc': '4 farklı şarap, peynir tabağı eşliğinde keyifli bir akşam. Rezervasyon zorunlu.',
-    'tags': ['Ücretli (150₺)', 'Yetişkin'],
-    'likes': 89,
-    'comments': 22,
-    'shares': 15,
-    'imageUrl': null,
-    'categoryColor': Color(0xFFFF6B6B),
-  },
-  {
-    'id': 5,
-    'emoji': '♟️',
-    'title': 'Satranç Turnuvası',
-    'location': 'Beyoğlu Kültür Merkezi',
-    'time': 'Cumartesi 14:00',
-    'joined': 9,
-    'max': 16,
-    'category': 'Oyun',
-    'creator': 'Mert Yıldız',
-    'avatar': 'MY',
-    'avatarColor': Color(0xFFFF6B00),
-    'desc': 'Swiss sistem, tüm seviyeler katılabilir. Küçük ödüller var.',
-    'tags': ['Turnuva', 'Ücretsiz'],
-    'likes': 33,
-    'comments': 8,
-    'shares': 6,
-    'imageUrl': null,
-    'categoryColor': Color(0xFFFF6B00),
-  },
-  {
-    'id': 6,
-    'emoji': '🎬',
-    'title': 'Film Gecesi: Kubrick',
-    'location': 'Beşiktaş, Ev Ortamı',
-    'time': 'Perşembe 20:30',
-    'joined': 4,
-    'max': 7,
-    'category': 'Eğlence',
-    'creator': 'Deniz Şahin',
-    'avatar': 'DS',
-    'avatarColor': Color(0xFF06B6D4),
-    'desc': 'Bu hafta Kubrick retrospektifi. Büyük ekran, karanlık oda, popcorn hazır!',
-    'tags': ['Sanat filmi', 'Ücretsiz'],
-    'likes': 55,
-    'comments': 12,
-    'shares': 8,
-    'imageUrl': null,
-    'categoryColor': Color(0xFF06B6D4),
-  },
-];
+List<Map<String, dynamic>> _events = [];
 
 // ─── HOME SCREEN ──────────────────────────────────────────────────────────────
 
@@ -146,6 +29,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
+
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final _scrollController = ScrollController();
   int _selectedCat = -1;
@@ -155,20 +39,40 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   int _bottomNavIndex = 0;
 
   // Mutable joined counts per event id
-  final Map<int, int> _joinedCounts = {};
+  final Map<String, int> _joinedCounts = {};
+
+  Future<void> _loadEvents() async {
+  try {
+    final data = await ApiService.getEvents();
+
+    print("GELEN DATA:");
+    print(data);
+
+    setState(() {
+      _events = List<Map<String, dynamic>>.from(data);
+    });
+  } catch (e) {
+    print("LOAD EVENTS HATASI:");
+    print(e);
+  }
+}
 
   @override
-  void initState() {
-    super.initState();
-    for (final e in _events) {
-      _joinedCounts[e['id'] as int] = e['joined'] as int;
-    }
-    _composeAnimCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
-    _composeAnim = CurvedAnimation(parent: _composeAnimCtrl, curve: Curves.easeInOutCubic);
-  }
+void initState() {
+  super.initState();
+
+  _loadEvents();
+
+  _composeAnimCtrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 300),
+  );
+
+  _composeAnim = CurvedAnimation(
+    parent: _composeAnimCtrl,
+    curve: Curves.easeInOutCubic,
+  );
+}
 
   @override
   void dispose() {
@@ -187,11 +91,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   void _onJoinChanged(int eventId, bool joined) {
-    setState(() {
-      final base = _events.firstWhere((e) => e['id'] == eventId)['joined'] as int;
-      _joinedCounts[eventId] = base + (joined ? 1 : 0);
-    });
-  }
+  setState(() {
+    // e['id'] kısmını String'e çevirip öyle karşılaştırıyoruz
+    final event = _events.firstWhere((e) => e['id'].toString() == eventId.toString());
+    final base = int.parse(event['joined'].toString());
+    
+    // Map anahtarını String olarak kullanıyoruz
+    _joinedCounts[eventId.toString()] = base + (joined ? 1 : 0);
+  });
+}
 
   @override
   Widget build(BuildContext context) {
@@ -215,8 +123,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       delegate: SliverChildBuilderDelegate(
                         (ctx, i) => _EventCard(
                           event: _events[i],
-                          currentJoined: _joinedCounts[_events[i]['id'] as int] ?? _events[i]['joined'] as int,
-                          onJoinChanged: (joined) => _onJoinChanged(_events[i]['id'] as int, joined),
+                          currentJoined: _joinedCounts[_events[i]['id'].toString()] ?? int.parse(_events[i]['joined'].toString()),
+                          onJoinChanged: (joined) => _onJoinChanged(int.parse(_events[i]['id'].toString()), joined),
                         ),
                         childCount: _events.length,
                       ),
@@ -794,6 +702,7 @@ class _LocationPill extends StatelessWidget {
 // ─── NOTIF BELL ───────────────────────────────────────────────────────────────
 
 class _NotifBell extends StatelessWidget {
+  
   @override
   Widget build(BuildContext context) {
     return Stack(
@@ -843,16 +752,33 @@ class _EventCard extends StatefulWidget {
 }
 
 class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMixin {
+
   bool _joined = false;
   bool _liked = false;
   late int _likeCount;
   late AnimationController _likeAnim;
   late Animation<double> _likeScale;
 
+  Color _parseHexColor(String? hexString) {
+  if (hexString == null || hexString.isEmpty) {
+    return Colors.blue; // Eğer renk boş gelirse varsayılan bir renk dönsün
+  }
+  // Başındaki # işaretini kaldırıyoruz
+  String cleanHex = hexString.replaceAll('#', '');
+  
+  // Eğer 6 karakterliyse (örn: ff6b00), başına opaklık değeri olan FF'i ekliyoruz (FFFF6B00)
+  if (cleanHex.length == 6) {
+    cleanHex = 'FF' + cleanHex;
+  }
+  
+  // Onaltılık (Hexadecimal) tabanda sayıya çevirip Color nesnesi üretiyoruz
+  return Color(int.parse(cleanHex, radix: 16));
+}
+
   @override
   void initState() {
     super.initState();
-    _likeCount = widget.event['likes'] as int;
+    _likeCount = int.parse(widget.event['likes'].toString());
     _likeAnim = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 300),
@@ -898,13 +824,18 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
 
   @override
   Widget build(BuildContext context) {
-    final e = widget.event;
-    final joined = widget.currentJoined;
-    final max = e['max'] as int;
-    final pct = (joined / max).clamp(0.0, 1.0);
-    final isFull = joined >= max;
-    final tags = e['tags'] as List<String>;
-    final catColor = e['categoryColor'] as Color;
+   final e = widget.event;
+  final joined = widget.currentJoined;
+  final max = int.parse(e['max'].toString());
+  final pct = (joined / max).clamp(0.0, 1.0);
+  final isFull = joined >= max;
+  final tags = List<String>.from(e['tags'] ?? []); 
+
+  // 1. KATEGORİ RENGİ İÇİN DÖNÜŞÜM
+  final catColor = _parseHexColor(e['categoryColor']?.toString()); 
+
+  // 2. AVATAR RENGİ İÇİN DÖNÜŞÜM (Hata buradaki 'as Color' yüzünden de kalmış olabilir)
+  final avatarColor = _parseHexColor(e['avatarColor']?.toString());
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 6, 16, 6),
@@ -934,7 +865,7 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
             child: Row(
               children: [
-                _AvatarCircle(initials: e['avatar'] as String, color: e['avatarColor'] as Color, size: 36),
+                _AvatarCircle(initials: e['avatar'] as String, color: avatarColor, size: 36),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
