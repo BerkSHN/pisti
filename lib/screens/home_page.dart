@@ -444,7 +444,7 @@ void initState() {
                 ),
               ),
               Text(
-                'Kadıköy · ${_events.length} etkinlik',
+                'Edirne · ${_events.length} etkinlik',
                 style: TextStyle(fontSize: 12, color: kTextSub, fontWeight: FontWeight.w500),
               ),
             ],
@@ -688,7 +688,7 @@ class _LocationPill extends StatelessWidget {
           Icon(Icons.location_on_rounded, size: 14, color: kPrimary),
           const SizedBox(width: 4),
           const Text(
-            'Kadıköy',
+            'Edirne',
             style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kText),
           ),
           const SizedBox(width: 2),
