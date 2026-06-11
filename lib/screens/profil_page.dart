@@ -136,7 +136,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 width: 110, height: 110,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  boxShadow: [BoxShadow(color: kPrimary.withOpacity(0.2), blurRadius: 40, spreadRadius: 5)],
+                  boxShadow: [BoxShadow(color: kPrimary.withValues(alpha: 0.2), blurRadius: 40, spreadRadius: 5)],
                 ),
               ),
               const CircleAvatar(
@@ -285,7 +285,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         decoration: BoxDecoration(
           color: kCard,
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: kTextSub.withOpacity(0.15)),
+          border: Border.all(color: kTextSub.withValues(alpha: 0.15)),
         ),
         child: Row(
           children: [
@@ -305,7 +305,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 ],
               ),
             ),
-            Icon(Icons.arrow_forward_ios_rounded, color: kTextSub.withOpacity(0.5), size: 16),
+            Icon(Icons.arrow_forward_ios_rounded, color: kTextSub.withValues(alpha: 0.5), size: 16),
           ],
         ),
       ),
@@ -349,7 +349,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             const SizedBox(height: 30),
             const Text("Etkinlik Hakkında", style: TextStyle(color: kText, fontWeight: FontWeight.w900, fontSize: 16)),
             const SizedBox(height: 10),
-            Text(event['desc'], style: TextStyle(color: kText.withOpacity(0.6), height: 1.5)),
+            Text(event['desc'], style: TextStyle(color: kText.withValues(alpha: 0.6), height: 1.5)),
             const Spacer(),
             SizedBox(
               width: double.infinity,

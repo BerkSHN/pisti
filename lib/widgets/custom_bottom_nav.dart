@@ -1,8 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:pisti_app/main.dart';
 import 'package:pisti_app/screens/home_page.dart';
-import 'package:pisti_app/screens/joined_page.dart';
-import 'package:pisti_app/screens/map_page.dart';
 import 'package:pisti_app/screens/profil_page.dart';
 import 'package:pisti_app/theme/app_colors.dart';
 class CustomBottomNav extends StatelessWidget {

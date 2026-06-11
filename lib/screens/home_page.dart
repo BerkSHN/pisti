@@ -262,7 +262,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         border: Border.all(color: kBorder),
         boxShadow: [
           BoxShadow(
-            color: kPrimary.withOpacity(0.12),
+            color: kPrimary.withValues(alpha: 0.12),
             blurRadius: 24,
             offset: const Offset(0, 8),
           ),
@@ -285,7 +285,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: kPrimary.withOpacity(0.45),
+                        color: kPrimary.withValues(alpha: 0.45),
                         blurRadius: 12,
                         offset: const Offset(0, 4),
                       ),
@@ -366,7 +366,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: [
                         BoxShadow(
-                          color: kPrimary.withOpacity(0.45),
+                          color: kPrimary.withValues(alpha: 0.45),
                           blurRadius: 12,
                           offset: const Offset(0, 4),
                         ),
@@ -491,7 +491,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(color: selected ? kPrimary : kBorder),
                 boxShadow: selected
-                    ? [BoxShadow(color: kPrimary.withOpacity(0.4), blurRadius: 12, offset: const Offset(0, 4))]
+                    ? [BoxShadow(color: kPrimary.withValues(alpha: 0.4), blurRadius: 12, offset: const Offset(0, 4))]
                     : [],
               ),
               child: Row(
@@ -548,7 +548,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               decoration: BoxDecoration(
                 color: kPrimaryLight,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: kPrimary.withOpacity(0.3)),
+                border: Border.all(color: kPrimary.withValues(alpha: 0.3)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -580,7 +580,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         border: Border(top: BorderSide(color: kBorder, width: 0.5)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.3),
+            color: Colors.black.withValues(alpha: 0.3),
             blurRadius: 20,
             offset: const Offset(0, -4),
           ),
@@ -615,7 +615,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: kPrimary.withOpacity(0.5),
+              color: kPrimary.withValues(alpha: 0.5),
               blurRadius: 20,
               offset: const Offset(0, 6),
             ),
@@ -647,12 +647,12 @@ class _PishtiLogo extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
             boxShadow: [
               BoxShadow(
-                color: kPrimary.withOpacity(0.5),
+                color: kPrimary.withValues(alpha: 0.5),
                 blurRadius: 14,
                 offset: const Offset(0, 4),
               ),
               BoxShadow(
-                color: kAccent.withOpacity(0.2),
+                color: kAccent.withValues(alpha: 0.2),
                 blurRadius: 6,
                 offset: const Offset(0, 0),
                 spreadRadius: 1,
@@ -729,11 +729,11 @@ class _PishtiLogoPainter extends CustomPainter {
     canvas.drawPath(leftBody, strokePaint..style = PaintingStyle.stroke);
 
     // Right person
-    canvas.drawCircle(Offset(size.width * 0.72, size.height * 0.28), 2.6, paint..color = Colors.white.withOpacity(0.85));
+    canvas.drawCircle(Offset(size.width * 0.72, size.height * 0.28), 2.6, paint..color = Colors.white.withValues(alpha: 0.85));
     final rightBody = Path()
       ..moveTo(size.width * 0.56, size.height * 0.82)
       ..quadraticBezierTo(size.width * 0.72, size.height * 0.58, size.width * 0.88, size.height * 0.82);
-    canvas.drawPath(rightBody, strokePaint..color = Colors.white.withOpacity(0.85));
+    canvas.drawPath(rightBody, strokePaint..color = Colors.white.withValues(alpha: 0.85));
 
     // Connection spark / flame between them
     final flamePaint = Paint()
@@ -771,7 +771,7 @@ class _LocationPill extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: kBorder),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 2)),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8, offset: const Offset(0, 2)),
         ],
       ),
       child: Row(
@@ -805,7 +805,7 @@ class _NotifBell extends StatelessWidget {
             color: kCard,
             shape: BoxShape.circle,
             border: Border.all(color: kBorder),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 2))],
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8, offset: const Offset(0, 2))],
           ),
           child: const Icon(Icons.notifications_outlined, size: 20, color: kText),
         ),
@@ -914,12 +914,12 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
         border: Border.all(color: kBorder, width: 0.5),
         boxShadow: [
           BoxShadow(
-            color: catColor.withOpacity(0.08),
+            color: catColor.withValues(alpha: 0.08),
             blurRadius: 20,
             offset: const Offset(0, 6),
           ),
           BoxShadow(
-            color: Colors.black.withOpacity(0.2),
+            color: Colors.black.withValues(alpha: 0.2),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -954,9 +954,9 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: catColor.withOpacity(0.15),
+                    color: catColor.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: catColor.withOpacity(0.25)),
+                    border: Border.all(color: catColor.withValues(alpha: 0.25)),
                   ),
                   child: Text(
                     e['category'] as String,
@@ -1006,7 +1006,7 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
             child: Text(
               e['desc'] as String,
-              style: TextStyle(fontSize: 14, color: kText.withOpacity(0.6), height: 1.55),
+              style: TextStyle(fontSize: 14, color: kText.withValues(alpha: 0.6), height: 1.55),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
@@ -1022,7 +1022,7 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
                 decoration: BoxDecoration(
                   color: kPrimaryLight,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: kPrimary.withOpacity(0.25)),
+                  border: Border.all(color: kPrimary.withValues(alpha: 0.25)),
                 ),
                 child: Text(t,
                   style: const TextStyle(
@@ -1143,7 +1143,7 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
                                   end: Alignment.bottomRight,
                                 )),
                       color: _joined
-                          ? kMint.withOpacity(0.12)
+                          ? kMint.withValues(alpha: 0.12)
                           : (isFull ? kCardElevated : null),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
@@ -1153,7 +1153,7 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
                           ? []
                           : [
                               BoxShadow(
-                                color: kPrimary.withOpacity(0.45),
+                                color: kPrimary.withValues(alpha: 0.45),
                                 blurRadius: 14,
                                 offset: const Offset(0, 4),
                               ),
@@ -1199,7 +1199,7 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
             borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
             gradient: LinearGradient(
               colors: [
-                catColor.withOpacity(0.3),
+                catColor.withValues(alpha: 0.3),
                 kCard,
               ],
               begin: Alignment.topLeft,
@@ -1213,7 +1213,7 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
                 child: Container(
                   width: 120, height: 120,
                   decoration: BoxDecoration(
-                    color: catColor.withOpacity(0.15),
+                    color: catColor.withValues(alpha: 0.15),
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -1223,7 +1223,7 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
                 child: Container(
                   width: 100, height: 100,
                   decoration: BoxDecoration(
-                    color: catColor.withOpacity(0.10),
+                    color: catColor.withValues(alpha: 0.10),
                     shape: BoxShape.circle,
                   ),
                 ),
@@ -1243,9 +1243,9 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: kCard.withOpacity(0.9),
+                color: kCard.withValues(alpha: 0.9),
                 borderRadius: BorderRadius.circular(12),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 6)],
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 6)],
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1371,7 +1371,7 @@ class _ShareOption extends StatelessWidget {
             Container(
               width: 40, height: 40,
               decoration: BoxDecoration(
-                color: color.withOpacity(0.15),
+                color: color.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(icon, size: 20, color: color),
@@ -1409,7 +1409,7 @@ class _AvatarCircle extends StatelessWidget {
       decoration: BoxDecoration(
         color: color,
         shape: BoxShape.circle,
-        boxShadow: [BoxShadow(color: color.withOpacity(0.35), blurRadius: 8, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: color.withValues(alpha: 0.35), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: Center(
         child: Text(
@@ -1459,9 +1459,9 @@ class _QuickChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
+        color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.2)),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

@@ -109,11 +109,11 @@ class JoinedPage extends StatelessWidget {
                       color: const Color(0xFF1A1A1A),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: Colors.white.withOpacity(0.06),
+                        color: Colors.white.withValues(alpha: 0.06),
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.4),
+                          color: Colors.black.withValues(alpha: 0.4),
                           blurRadius: 18,
                           offset: const Offset(0, 6),
                         ),
@@ -128,7 +128,7 @@ class JoinedPage extends StatelessWidget {
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               colors: [
-                                const Color(0xFFFF6B00).withOpacity(0.25),
+                                const Color(0xFFFF6B00).withValues(alpha: 0.25),
                                 Colors.transparent,
                               ],
                               begin: Alignment.topLeft,
@@ -176,10 +176,10 @@ class JoinedPage extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
-                            color: _color(e['status']).withOpacity(0.12),
+                            color: _color(e['status']).withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
-                              color: _color(e['status']).withOpacity(0.35),
+                              color: _color(e['status']).withValues(alpha: 0.35),
                             ),
                           ),
                           child: Text(
