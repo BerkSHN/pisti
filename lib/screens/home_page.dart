@@ -23,7 +23,11 @@ List<Map<String, dynamic>> _events = [];
 // ─── HOME SCREEN ──────────────────────────────────────────────────────────────
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final String username;
+  final String userId;
+  final List<String> initialJoinedEvents;
+
+  const HomeScreen({super.key, required this.username, required this.userId, required this.initialJoinedEvents});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -31,9 +35,11 @@ class HomeScreen extends StatefulWidget {
 
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
+  
+  late Set<String> _myJoinedEventIds;
+  Map<String, int> _joinedCounts = {};
 
-  Future<void> _submitEvent() async {
-  // Basit boş alan kontrolü
+ Future<void> _submitEvent() async {
   if (_titleController.text.isEmpty || _locationController.text.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Lütfen etkinlik adı ve konum alanlarını doldurun!')),
@@ -41,7 +47,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return;
   }
 
-  // FastAPI backend modeline (Pydantic) tam uyumlu veri objesi
   final Map<String, dynamic> eventData = {
     "title": _titleController.text,
     "location": _locationController.text,
@@ -50,28 +55,37 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     "desc": _descController.text,
     "emoji": _selectedCategoryEmoji,
     "category": _selectedCategoryLabel,
-    "categoryColor": "#FF6B00", // Hex String türünde renk kodu
-    "joined": 1,
+    "categoryColor": "#FF6B00",
+    "joined": 1, // Arayüzün ilk gösterimi için 1 kalabilir
     "likes": 0,
-    "comments": 0, // Boş yorum listesi
+    "comments": 0, 
     "shares": 0,
-    "creator": "Eren",
-    "avatar": "E",
+    "creator": widget.username,
+    "avatar": (widget.username.trim().isNotEmpty) 
+      ? widget.username.trim()[0].toUpperCase() 
+      : "U",
     "avatarColor": "#10B981",
     "tags": [_selectedCategoryLabel, "Yeni"],
     "imageUrl": null
   };
 
-  // İstek atılırken bir yükleme göstergesi ekleyebiliriz (opsiyonel)
-  // ApiService üzerinden servisi tetikliyoruz
-  final success = await ApiService.createEvent(eventData);
+  // 1. Backend'e isteği atıyoruz
+  final response = await ApiService.createEvent(eventData, widget.userId);
 
   if (!mounted) return;
 
-  if (success) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Etkinlik başarıyla paylaşıldı! 🎉')),
-    );
+  if (response["success"] == true) {
+    final createdEvent = response["data"];
+    if (createdEvent != null) {
+      final String newEventId = (createdEvent["_id"] ?? createdEvent["id"] ?? "").toString();
+      
+      if (newEventId.isNotEmpty) {
+        // 2. Önce local hafızayı kesin olarak güncelliyoruz
+        setState(() {
+          _myJoinedEventIds.add(newEventId);
+        });
+      }
+    }
 
     // Form alanlarını temizle
     _titleController.clear();
@@ -81,14 +95,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _maxPlayersController.clear();
     _descController.clear();
     
-    // Formu kapat
     _toggleCompose();
 
-    // Anasayfadaki listeyi yenilemek için senin getEvents yapını tetikleyen fonksiyon
-    _loadEvents(); 
+    // 🎯 KRİTİK GÜNCELLEME: Listeyi yenileme işlemini 'await' ile bekliyoruz.
+    // Böylece veritabanından veriler tamamen çekilip ekran güncellenene kadar süreç kilitlenir.
+    await _loadEvents(); 
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Etkinlik başarıyla paylaşıldı! 🎉')),
+    );
   } else {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Etkinlik paylaşılamadı. Backend loglarını kontrol edin.')),
+      SnackBar(content: Text(response["message"] ?? 'Etkinlik paylaşılamadı.')),
     );
   }
 }
@@ -111,29 +129,44 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   String _selectedCategoryEmoji = '🏀';
   Color _selectedCategoryColor = const Color(0xFFFF6B00);
 
-  // Mutable joined counts per event id
-  final Map<String, int> _joinedCounts = {};
 
-  Future<void> _loadEvents() async {
+Future<void> _loadEvents() async {
   try {
+    // 1. Hem etkinlik havuzunu hem de kullanıcının veritabanındaki en güncel katılım listesini ÇEKİYORUZ
     final data = await ApiService.getEvents();
+    
+    // Hatırlatma: Bir önceki adımda api_service.dart dosyasına eklediğimiz fonksiyon
+    final updatedJoinedEvents = await ApiService.getUserJoinedEvents(widget.userId);
 
-    print("GELEN DATA:");
-    print(data);
+    print("GELEN ETKİNLİK DATASI: $data");
+    print("SEKME DEĞİŞTİRİP DÖNDÜKTEN SONRAKİ GÜNCEL KATILIM LİSTESİ: $updatedJoinedEvents");
+
+    if (!mounted) return;
 
     setState(() {
-      _events = List<Map<String, dynamic>>.from(data);
-    });
+  _events = List<Map<String, dynamic>>.from(data);
+  
+  // Veritabanından gelen güncel katılım listesini doğrudan set et
+  _myJoinedEventIds = Set<String>.from(updatedJoinedEvents);
+  
+  // Ekstra Güvenlik: Eğer gelen listede bu event ID'si yoksa yerel kümeden de uçur
+  _joinedCounts.clear();
+  for (var event in _events) {
+    final String eventId = (event['_id'] ?? event['id'] ?? '').toString();
+    if (eventId.isNotEmpty) {
+      _joinedCounts[eventId] = int.tryParse(event['joined'].toString()) ?? 0;
+    }
+  }
+});
   } catch (e) {
-    print("LOAD EVENTS HATASI:");
-    print(e);
+    print("LOAD EVENTS HATASI: $e");
   }
 }
 
   @override
 void initState() {
   super.initState();
-
+  _myJoinedEventIds = Set<String>.from(widget.initialJoinedEvents);
   _loadEvents();
 
   _composeAnimCtrl = AnimationController(
@@ -169,14 +202,17 @@ void initState() {
     }
   }
 
-  void _onJoinChanged(int eventId, bool joined) {
+ void _onJoinChanged(String eventId, bool joined) {
   setState(() {
-    // e['id'] kısmını String'e çevirip öyle karşılaştırıyoruz
-    final event = _events.firstWhere((e) => e['id'].toString() == eventId.toString());
-    final base = int.parse(event['joined'].toString());
+    // Haritada değer yoksa bile veritabanından o an kartın üzerinde yazan güncel değeri referans alıyoruz
+    final currentCount = _joinedCounts[eventId] ?? 0; 
     
-    // Map anahtarını String olarak kullanıyoruz
-    _joinedCounts[eventId.toString()] = base + (joined ? 1 : 0);
+    if (joined) {
+      _joinedCounts[eventId] = currentCount + 1;
+    } else {
+      // Sayının sıfırın altına düşmesini engellemek için clamp/önlem koyuyoruz
+      _joinedCounts[eventId] = (currentCount - 1).clamp(0, 9999);
+    }
   });
 }
 
@@ -191,27 +227,47 @@ void initState() {
             children: [
               _buildTopBar(),
               Expanded(
-                child: CustomScrollView(
-                  controller: _scrollController,
-                  physics: const BouncingScrollPhysics(),
-                  slivers: [
-                    SliverToBoxAdapter(child: _buildComposeBox()),
-                    SliverToBoxAdapter(child: _buildCategoryRow()),
-                    SliverToBoxAdapter(child: _buildSectionHeader()),
-                    SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (ctx, i) => _EventCard(
-                          event: _events[i],
-                          currentJoined: _joinedCounts[_events[i]['id'].toString()] ?? int.parse(_events[i]['joined'].toString()),
-                          onJoinChanged: (joined) => _onJoinChanged(int.parse(_events[i]['id'].toString()), joined),
-                        ),
-                        childCount: _events.length,
-                      ),
-                    ),
-                    const SliverToBoxAdapter(child: SizedBox(height: 120)),
-                  ],
-                ),
-              ),
+  child: CustomScrollView(
+    controller: _scrollController,
+    physics: const BouncingScrollPhysics(),
+    slivers: [
+      SliverToBoxAdapter(child: _buildComposeBox()),
+      SliverToBoxAdapter(child: _buildCategoryRow()),
+      SliverToBoxAdapter(child: _buildSectionHeader()),
+      SliverList(
+  delegate: SliverChildBuilderDelegate(
+    (ctx, i) {
+      final String currentEventId = (_events[i]['_id'] ?? _events[i]['id'] ?? '').toString();
+      final bool hasJoinedBefore = _myJoinedEventIds.contains(currentEventId);
+      final int currentCount = _joinedCounts[currentEventId] ?? int.tryParse(_events[i]['joined'].toString()) ?? 0;
+
+      return _EventCard(
+        // 🎯 İŞTE EN KRİTİK DÜZELTME: Flutter'ın eski durumu korumasını engeller
+        key: ValueKey(currentEventId), 
+        event: _events[i],
+        eventId: currentEventId, 
+        userId: widget.userId, 
+        isAlreadyJoined: hasJoinedBefore, 
+        currentJoined: currentCount,
+        onJoinChanged: (joined) {
+          _onJoinChanged(currentEventId, joined);
+          setState(() {
+            if (joined) {
+              _myJoinedEventIds.add(currentEventId);
+            } else {
+              _myJoinedEventIds.remove(currentEventId);
+            }
+          });
+        },
+      );
+    },
+    childCount: _events.length,
+  ),
+),
+      const SliverToBoxAdapter(child: SizedBox(height: 120)),
+    ],
+  ),
+)
             ],
           ),
         ),
@@ -860,11 +916,18 @@ class _EventCard extends StatefulWidget {
   final Map<String, dynamic> event;
   final int currentJoined;
   final ValueChanged<bool> onJoinChanged;
+  final String userId;
+  final String eventId;
+  final bool isAlreadyJoined;
 
   const _EventCard({
+    super.key,
     required this.event,
     required this.currentJoined,
     required this.onJoinChanged,
+    required this.userId,
+    required this.eventId,
+    required this.isAlreadyJoined,
   });
 
   @override
@@ -873,11 +936,12 @@ class _EventCard extends StatefulWidget {
 
 class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMixin {
 
-  bool _joined = false;
+  late bool _joined;
   bool _liked = false;
   late int _likeCount;
   late AnimationController _likeAnim;
   late Animation<double> _likeScale;
+
 
   Color _parseHexColor(String? hexString) {
   if (hexString == null || hexString.isEmpty) {
@@ -898,6 +962,7 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
   @override
   void initState() {
     super.initState();
+    _joined = widget.isAlreadyJoined; // Başlangıçta kartın prop'una göre katılım durumunu ayarla
     _likeCount = int.parse(widget.event['likes'].toString());
     _likeAnim = AnimationController(
       vsync: this,
@@ -915,6 +980,18 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
     super.dispose();
   }
 
+  @override
+void didUpdateWidget(covariant _EventCard oldWidget) {
+  super.didUpdateWidget(oldWidget);
+  // 🎯 Üst sayfadan gelen katılım durumu (true/false) değiştiyse, 
+  // kartın kendi içindeki durumu da zorunlu olarak güncelle!
+  if (widget.isAlreadyJoined != oldWidget.isAlreadyJoined) {
+    setState(() {
+      _joined = widget.isAlreadyJoined; 
+    });
+  }
+}
+
   void _toggleLike() {
     setState(() {
       _liked = !_liked;
@@ -924,14 +1001,59 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
     HapticFeedback.lightImpact();
   }
 
-  void _toggleJoin(bool isFull) {
-    if (!isFull || _joined) {
-      final newJoined = !_joined;
-      setState(() => _joined = newJoined);
-      widget.onJoinChanged(newJoined);
-      HapticFeedback.mediumImpact();
+void _toggleJoin(bool isFull) async {
+  // Eğer kontenjan doluysa ve kullanıcı henüz katılmadıysa işlem yapma
+  if (isFull && !_joined) return;
+
+  final newJoined = !_joined;
+
+  // ÖNEMLİ: Arayüzün anlık tepki vermesi için widget'ın onJoinChanged tetikleyicisini
+  // fonksiyonun en başında çağırıyoruz. (Arayüz anlık güncelleniyor)
+  widget.onJoinChanged(newJoined);
+  setState(() {
+    _joined = newJoined;
+  });
+
+  if (newJoined) {
+    // DURUM 1: Veritabanında Katılma İşlemi
+    print("API'YE GİDEN KATILMA İSTEĞİ -> userId: '${widget.userId}', eventId: '${widget.eventId}'");
+    
+    final result = await ApiService.joinEvent(
+      userId: widget.userId,
+      eventId: widget.eventId,
+    );
+
+    if (result["success"] != true) {
+      // Eğer veritabanı işlemi başarısız olursa arayüzü eski haline geri çekiyoruz (Rollback)
+      widget.onJoinChanged(!newJoined);
+      setState(() {
+        _joined = !newJoined;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result["message"] ?? "Veritabanına kaydedilemedi.")),
+      );
+    }
+  } else {
+    // DURUM 2: Veritabanında Ayrılma İşlemi
+    print("API'YE GİDEN AYRILMA İSTEĞİ -> userId: '${widget.userId}', eventId: '${widget.eventId}'");
+
+    final result = await ApiService.leaveEvent(
+      userId: widget.userId,
+      eventId: widget.eventId,
+    );
+
+    if (result["success"] != true) {
+      // Başarısızlık durumunda geri al
+      widget.onJoinChanged(!newJoined);
+      setState(() {
+        _joined = !newJoined;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result["message"] ?? "Veritabanından silinemedi.")),
+      );
     }
   }
+}
 
   void _shareEvent() {
     HapticFeedback.lightImpact();

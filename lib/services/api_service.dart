@@ -63,25 +63,138 @@ class ApiService {
     throw Exception("API Error ${response.statusCode}");
   }
 
-  static Future<bool> createEvent(Map<String, dynamic> eventData) async {
+static Future<Map<String, dynamic>> createEvent(Map<String, dynamic> eventData, String userId) async {
+  try {
+    final response = await http.post(
+      // URL parametresi olarak userId'yi backend'e uçuruyoruz
+      Uri.parse('$baseUrl/events?user_id=$userId'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(eventData),
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return {"success": true, "data": jsonDecode(response.body)};
+    } else {
+      return {"success": false, "message": "Etkinlik oluşturulamadı."};
+    }
+  } catch (e) {
+    return {"success": false, "message": e.toString()};
+  }
+}
+  static Future<Map<String, dynamic>> joinEvent({required String userId, required String eventId}) async {
     try {
+      print("BACKEND'E GİDEN VERİ -> userId: '$userId', eventId: '$eventId'");
       final response = await http.post(
-        Uri.parse("$baseUrl/events"),
+        Uri.parse('$baseUrl/join_event'), // Sabit IP yerine yukarıdaki baseUrl'i kullanmak daha temizdir
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(eventData),
+        body: jsonEncode({
+          'user_id': userId,
+          'event_id': eventId,
+        }),
       );
 
-      print("POST STATUS: ${response.statusCode}");
-      print("POST BODY: ${response.body}");
-
-      // FastAPI başarılı kayıt durumunda 200 veya 201 döner
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        return true;
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        return {"success": false, "message": "Bir hata oluştu."};
       }
-      return false;
     } catch (e) {
-      print("ApiService createEvent Hatası: $e");
-      return false;
+      return {"success": false, "message": e.toString()};
     }
   }
+  static Future<Map<String, dynamic>> leaveEvent({required String userId, required String eventId}) async {
+  try {
+    final response = await http.post(
+      Uri.parse('$baseUrl/leave_event'), // FastAPI'deki endpoint ismiyle birebir aynı olmalı
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'user_id': userId,
+        'event_id': eventId,
+      }),
+    );
+
+    // Backend'den gelen yanıtı decode edip geri döndürüyoruz
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return jsonDecode(response.body);
+    } else {
+      // Hata durumunda formatı bozmamak için success: false dönüyoruz
+      final errorData = jsonDecode(response.body);
+      return {
+        "success": false, 
+        "message": errorData["detail"] ?? "Etkinlikten ayrılırken bir hata oluştu."
+      };
+    }
+  } catch (e) {
+    return {
+      "success": false, 
+      "message": "Bağlantı hatası: ${e.toString()}"
+    };
+  }
+}
+static Future<List<String>> getUserJoinedEvents(String userId) async {
+  try {
+    final response = await http.get(Uri.parse('$baseUrl/users/$userId'));
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      if (data["joined_events"] != null) {
+        return List<String>.from(data["joined_events"].map((e) => e.toString()));
+      }
+    }
+    return [];
+  } catch (e) {
+    print("Kullanıcı etkinlikleri çekilemedi: $e");
+    return [];
+  }
+}
+static Future<List<Map<String, dynamic>>> getUserJoinedEventsDetails(String userId) async {
+  try {
+    final response = await http.get(Uri.parse('$baseUrl/users/$userId/joined_events_details'));
+    if (response.statusCode == 200) {
+      final List data = jsonDecode(response.body);
+      return List<Map<String, dynamic>>.from(data);
+    }
+    return [];
+  } catch (e) {
+    print("Katılınan etkinlik detayları çekilemedi: $e");
+    return [];
+  }
+}
+// 1. Kullanıcı profil özeti (Kullanıcı adı, email vb.)
+static Future<Map<String, dynamic>?> getUserProfileSummary(String userId) async {
+  try {
+    final response = await http.get(Uri.parse('$baseUrl/users/$userId'));
+    
+    if (response.statusCode == 200) {
+      final decoded = jsonDecode(response.body);
+      
+      // Eğer backend veriyi bir "data" veya "user" key'i içinde sarmalladıysa onu ayıklayalım
+      if (decoded is Map<String, dynamic>) {
+        if (decoded.containsKey('data')) {
+          return decoded['data'] as Map<String, dynamic>;
+        } else if (decoded.containsKey('user')) {
+          return decoded['user'] as Map<String, dynamic>;
+        }
+        return decoded;
+      }
+    }
+    return null;
+  } catch (e) {
+    print("Profil servis hatası: $e");
+    return null;
+  }
+}
+
+// 3. Kullanıcının kendi oluşturduğu etkinliklerin detaylı listesi
+static Future<List<Map<String, dynamic>>> getUserCreatedEvents(String userId) async {
+  try {
+    final response = await http.get(Uri.parse('$baseUrl/users/$userId/created-events'));
+    if (response.statusCode == 200) {
+      return List<Map<String, dynamic>>.from(jsonDecode(response.body));
+    }
+    return [];
+  } catch (e) {
+    print("Oluşturulan etkinlikler çekilemedi: $e");
+    return [];
+  }
+}
 }

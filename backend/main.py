@@ -6,6 +6,7 @@ import jwt
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from bson import ObjectId
+from pydantic import BaseModel
 
 from database import events_collection, users_collection
 from models import Event, LoginRequest, RegisterRequest
@@ -52,6 +53,7 @@ def user_serializer(user):
         "full_name": user["full_name"],
         "email": user["email"],
         "username": user["username"],
+        "joined_events": user.get("joined_events", [])
     }
 
 
@@ -72,6 +74,10 @@ def password_is_valid(password: str, password_hash: str):
         )
     except ValueError:
         return False
+    
+class JoinEventRequest(BaseModel):
+    user_id: str   
+    event_id: str  
 
 
 @app.post("/auth/register", status_code=status.HTTP_201_CREATED)
@@ -134,17 +140,32 @@ async def login(request: LoginRequest):
     }
 
 @app.post("/events")
-async def create_event(event: Event):
-
-    result = await events_collection.insert_one(
-        event.model_dump()
-    )
-
-    created = await events_collection.find_one(
-        {"_id": result.inserted_id}
-    )
-
-    return event_serializer(created)
+async def create_event(event: Event, user_id: str):
+    try:
+        event_dict = event.model_dump()
+        
+        # Etkinlik ilk başta kesinlikle 1 katılımcı (oluşturan kişi) ile başlasın
+        event_dict["joined"] = 1 
+        event_dict["owner_id"] = user_id
+        
+        # 1. Etkinliği veritabanına kaydet
+        result = await events_collection.insert_one(event_dict)
+        event_id_str = str(result.inserted_id)
+        
+        # 2. Kullanıcının katıldığı etkinlikler listesine BU etkinliğin string ID'sini ekle
+        # Burada modified_count kontrolü yapmadan doğrudan push/addToSet atıyoruz
+        await users_collection.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$addToSet": {"joined_events": event_id_str}}
+        )
+        
+        # 3. Güncel dökümanı bul ve sarmalayıcıdan (serializer) geçirerek dön
+        created = await events_collection.find_one({"_id": result.inserted_id})
+        return event_serializer(created)
+        
+    except Exception as e:
+        print(f"Etkinlik Oluşturma Hatası: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"İşlem başarısız: {str(e)}")
 
 @app.get("/events")
 async def get_events():
@@ -212,3 +233,102 @@ async def delete_event(event_id: str):
     return {
         "message": "Event deleted successfully"
     }
+
+@app.post("/join_event")
+async def join_event(request: JoinEventRequest):
+    try:
+        user_oid = ObjectId(request.user_id)
+        
+        # 1. Kullanıcının listesine etkinliği ekle
+        user_result = await users_collection.update_one(
+            {"_id": user_oid},
+            {"$addToSet": {"joined_events": request.event_id}}
+        )
+        
+        # Eğer kullanıcı zaten katılmışsa (modified_count == 0), etkinlik sayacını boşuna artırma
+        if user_result.modified_count > 0:
+            # 2. Etkinliğin joined sayısını veritabanında 1 ARTIR
+            await events_collection.update_one(
+                {"_id": ObjectId(request.event_id)},
+                {"$inc": {"joined": 1}} # MongoDB'nin artırma operatörü
+            )
+            
+        return {"success": True, "message": "Etkinliğe başarıyla katıldınız."}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/leave_event")
+async def leave_event(request: JoinEventRequest):
+    try:
+        user_oid = ObjectId(request.user_id)
+        
+        # 1. Kullanıcının listesinden etkinliği sil
+        user_result = await users_collection.update_one(
+            {"_id": user_oid},
+            {"$pull": {"joined_events": request.event_id}}
+        )
+        
+        # Eğer kullanıcı gerçekten listeden silindiyse sayacı azalt
+        if user_result.modified_count > 0:
+            # 2. Etkinliğin joined sayısını veritabanında 1 AZALT
+            await events_collection.update_one(
+                {"_id": ObjectId(request.event_id)},
+                {"$inc": {"joined": -1}}
+            )
+            
+        return {"success": True, "message": "Etkinlikten başarıyla ayrıldınız."}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/users/{user_id}")
+async def get_user_profile(user_id: str):
+    try:
+        user = await users_collection.find_one({"_id": ObjectId(user_id)})
+        if not user:
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+        
+        # Kullanıcının sadece joined_events listesini dönmemiz yeterli
+        return {
+        "full_name": user.get("full_name", "İsimsiz Kullanıcı"),
+        "username": user.get("username", ""),
+        "email": user.get("email", ""),
+        "joined_events": user.get("joined_events", [])
+    }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/users/{user_id}/joined_events_details")
+async def get_user_joined_events_details(user_id: str):
+    try:
+        # 1. Kullanıcıyı bul
+        user = await users_collection.find_one({"_id": ObjectId(user_id)})
+        if not user:
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+        
+        # 2. Kullanıcının katıldığı etkinliklerin ID listesini al
+        joined_ids = user.get("joined_events", [])
+        
+        # 3. Bu ID'lere sahip tüm etkinlikleri veritabanından sorgula
+        object_ids = [ObjectId(eid) for eid in joined_ids if eid]
+        events_cursor = events_collection.find({"_id": {"$in": object_ids}})
+        events = await events_cursor.to_list(length=100)
+        
+        # 4. Serileştirip listeyi dön (Varsayılan durum olarak hepsine 'Katıldın' basabiliriz)
+        serialized_events = []
+        for e in events:
+            s_event = event_serializer(e)
+            s_event["status"] = "Katıldın" # Sayfa tasarımı için statü ekliyoruz
+            serialized_events.append(s_event)
+            
+        return serialized_events
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+# FastAPI (main.py veya ilgili router dosyası)
+
+@app.get("/users/{user_id}/created-events")
+async def get_user_created_events(user_id: str):
+    # 🎯 Şimdilik boş liste dönüyoruz ki Flutter 404 almasın, 
+    # ekran pürüzsüzce açılsın ve "Henüz bir etkinlik oluşturmadın" desin.
+    return []

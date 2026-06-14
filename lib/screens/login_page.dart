@@ -26,30 +26,51 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
-    final email = _emailController.text.trim();
-    final password = _passwordController.text;
+  final email = _emailController.text.trim();
+  final password = _passwordController.text;
 
-    if (email.isEmpty || password.isEmpty) {
-      _showMessage("E-posta ve şifre alanlarını doldurun");
-      return;
-    }
-
-    setState(() => _isLoading = true);
-    final result = await ApiService.login(email: email, password: password);
-
-    if (!mounted) return;
-    setState(() => _isLoading = false);
-
-    if (result["success"] == true) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const MainShell()),
-      );
-      return;
-    }
-
-    _showMessage(result["message"]?.toString() ?? "Giriş yapılamadı");
+  if (email.isEmpty || password.isEmpty) {
+    _showMessage("E-posta ve şifre alanlarını doldurun");
+    return;
   }
+
+  setState(() => _isLoading = true);
+  final result = await ApiService.login(email: email, password: password);
+
+  if (!mounted) return;
+  setState(() => _isLoading = false);
+
+  // ApiService'den dönen haritada (Map) işlemin başarılı olup olmadığını kontrol ediyoruz
+  if (result["success"] == true) {
+    
+    String realUsername = 'Kullanıcı'; 
+    String currentUserId = '';
+    List<String> joinedEvents = [];
+    
+    if (result["user"] != null && result["user"]["username"] != null) {
+      realUsername = result["user"]["username"].toString();
+      currentUserId = result["user"]["_id"]?.toString() ?? result["user"]["id"]?.toString()?? '';
+      if (result["user"]["joined_events"] != null) {
+      joinedEvents = List<String>.from(result["user"]["joined_events"].map((e) => e.toString()));
+    }
+    } else if (result["username"] != null) {
+      // Alternatif durum: Eğer arkadaşının yazdığı servis user nesnesini doğrudan result köküne yaydıysa
+      realUsername = result["username"].toString();
+    }
+
+    // 2. Alınan kullanıcı adı ile MainShell'e yönlendirme yapıyoruz (const kaldırıldı)
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MainShell(username: realUsername, userId: currentUserId, userJoinedEvents: joinedEvents),
+      ),
+    );
+    return;
+  } else {
+    // Giriş başarısızsa hata mesajını göster
+    _showMessage(result["message"] ?? "Giriş başarısız. Bilgilerinizi kontrol edin.");
+  }
+}
 
   void _showMessage(String message) {
     ScaffoldMessenger.of(

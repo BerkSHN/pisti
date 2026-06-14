@@ -26,7 +26,10 @@ class PishtiApp extends StatelessWidget {
 }
 
 class MainShell extends StatefulWidget {
-  const MainShell({super.key});
+  final String username;
+  final String userId;
+  final List<String> userJoinedEvents;
+  const MainShell({super.key, required this.username , required this.userId , required this.userJoinedEvents});
 
   @override
   State<MainShell> createState() => _MainShellState();
@@ -35,20 +38,25 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int index = 0;
 
-  final pages = [
-    HomeScreen(),
-    MapPage(), // Map
-    JoinedPage(), // Favorites
-    ProfileScreen(),
-  ];
+  // 1. Sayfalar listesini late (sonradan doldurulacak) olarak tanımlıyoruz
+  late final List<Widget> pages;
 
-  
+  @override
+  void initState() {
+    super.initState();
+    // 2. Sınıf oluşturulurken widget.username ve widget.userId değerlerini güvenle buraya aktarıyoruz
+    pages = [
+      HomeScreen(username: widget.username, userId: widget.userId, initialJoinedEvents: widget.userJoinedEvents,), // Artık generic veya boş gelmeyecek!
+      MapPage(), 
+      JoinedPage(userId: widget.userId), 
+      ProfileScreen(userId: widget.userId), // İstersen profil sayfasına da widget.username paslayabilirsin
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: pages[index],
-
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: index,
         onTap: (i) {
