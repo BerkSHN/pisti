@@ -1,11 +1,19 @@
-from fastapi import FastAPI, HTTPException
+from datetime import datetime, timedelta, timezone
+import os
+
+import bcrypt
+import jwt
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from bson import ObjectId
 
-from database import events_collection
-from models import Event
+from database import events_collection, users_collection
+from models import Event, LoginRequest, RegisterRequest
 
 app = FastAPI()
+
+JWT_SECRET = os.getenv("JWT_SECRET", "development-secret-change-me")
+JWT_ALGORITHM = "HS256"
 
 app.add_middleware(
     CORSMiddleware,
@@ -35,6 +43,94 @@ def event_serializer(event):
         "shares": event["shares"],
         "imageUrl": event.get("imageUrl"),
         "categoryColor": event["categoryColor"]
+    }
+
+
+def user_serializer(user):
+    return {
+        "id": str(user["_id"]),
+        "full_name": user["full_name"],
+        "email": user["email"],
+        "username": user["username"],
+    }
+
+
+def create_access_token(user_id: str):
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    return jwt.encode(
+        {"sub": user_id, "exp": expires_at},
+        JWT_SECRET,
+        algorithm=JWT_ALGORITHM,
+    )
+
+
+def password_is_valid(password: str, password_hash: str):
+    try:
+        return bcrypt.checkpw(
+            password.encode("utf-8"),
+            password_hash.encode("utf-8"),
+        )
+    except ValueError:
+        return False
+
+
+@app.post("/auth/register", status_code=status.HTTP_201_CREATED)
+async def register(request: RegisterRequest):
+    email = request.email.strip().lower()
+    username = request.username.strip().lower()
+
+    if "@" not in email:
+        raise HTTPException(status_code=422, detail="Geçerli bir e-posta girin")
+
+    if len(request.password.encode("utf-8")) > 72:
+        raise HTTPException(status_code=422, detail="Şifre çok uzun")
+
+    existing_user = await users_collection.find_one(
+        {"$or": [{"email": email}, {"username": username}]}
+    )
+    if existing_user:
+        detail = (
+            "Bu e-posta zaten kayıtlı"
+            if existing_user["email"] == email
+            else "Bu kullanıcı adı zaten alınmış"
+        )
+        raise HTTPException(status_code=409, detail=detail)
+
+    password_hash = bcrypt.hashpw(
+        request.password.encode("utf-8"),
+        bcrypt.gensalt(),
+    ).decode("utf-8")
+
+    result = await users_collection.insert_one(
+        {
+            "full_name": request.full_name.strip(),
+            "email": email,
+            "username": username,
+            "password_hash": password_hash,
+            "created_at": datetime.now(timezone.utc),
+        }
+    )
+    user = await users_collection.find_one({"_id": result.inserted_id})
+
+    return {
+        "access_token": create_access_token(str(result.inserted_id)),
+        "token_type": "bearer",
+        "user": user_serializer(user),
+    }
+
+
+@app.post("/auth/login")
+async def login(request: LoginRequest):
+    email = request.email.strip().lower()
+    user = await users_collection.find_one({"email": email})
+
+    if not user or not password_is_valid(request.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="E-posta veya şifre hatalı")
+
+    return {
+        "access_token": create_access_token(str(user["_id"])),
+        "token_type": "bearer",
+        "user": user_serializer(user),
     }
 
 @app.post("/events")

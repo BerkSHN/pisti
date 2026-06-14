@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:pisti_app/main.dart';
-import 'package:pisti_app/screens/home_page.dart';
 import 'package:pisti_app/theme/app_colors.dart';
 import 'package:pisti_app/services/api_service.dart';
 
@@ -15,6 +14,48 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   bool obscurePassword = true;
+  bool _isLoading = false;
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _login() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text;
+
+    if (email.isEmpty || password.isEmpty) {
+      _showMessage("E-posta ve şifre alanlarını doldurun");
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    final result = await ApiService.login(email: email, password: password);
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    if (result["success"] == true) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const MainShell()),
+      );
+      return;
+    }
+
+    _showMessage(result["message"]?.toString() ?? "Giriş yapılamadı");
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -51,10 +92,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
           SafeArea(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 24,
-                vertical: 20,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
               child: Column(
                 children: [
                   const SizedBox(height: 40),
@@ -77,10 +115,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ],
                     ),
                     child: const Center(
-                      child: Text(
-                        "☺️",
-                        style: TextStyle(fontSize: 40),
-                      ),
+                      child: Text("☺️", style: TextStyle(fontSize: 40)),
                     ),
                   ),
 
@@ -130,6 +165,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         _inputField(
                           hint: "E-posta",
                           icon: Icons.mail_outline_rounded,
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
                         ),
 
                         const SizedBox(height: 14),
@@ -137,6 +174,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         _inputField(
                           hint: "Şifre",
                           icon: Icons.lock_outline_rounded,
+                          controller: _passwordController,
                           obscure: obscurePassword,
                           suffix: IconButton(
                             onPressed: () {
@@ -175,12 +213,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           width: double.infinity,
                           height: 58,
                           child: ElevatedButton(
-                            onPressed: () {
-                                Navigator.pushReplacement(
-                                    context,
-                                    MaterialPageRoute(builder: (_) => const MainShell()),
-                                  );
-                              },
+                            onPressed: _isLoading ? null : _login,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: kPrimary,
                               elevation: 0,
@@ -188,14 +221,23 @@ class _LoginScreenState extends State<LoginScreen> {
                                 borderRadius: BorderRadius.circular(18),
                               ),
                             ),
-                            child: const Text(
-                              "Giriş Yap",
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.white,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
+                            child: _isLoading
+                                ? const SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Text(
+                                    "Giriş Yap",
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
                           ),
                         ),
                       ],
@@ -206,35 +248,18 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   Row(
                     children: [
-                      Expanded(
-                        child: Container(
-                          height: 1,
-                          color: kBorder,
-                        ),
-                      ),
+                      Expanded(child: Container(height: 1, color: kBorder)),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: Text(
-                          "veya",
-                          style: TextStyle(color: kTextSub),
-                        ),
+                        child: Text("veya", style: TextStyle(color: kTextSub)),
                       ),
-                      Expanded(
-                        child: Container(
-                          height: 1,
-                          color: kBorder,
-                        ),
-                      ),
+                      Expanded(child: Container(height: 1, color: kBorder)),
                     ],
                   ),
 
                   const SizedBox(height: 24),
 
-                  _socialButton(
-                    icon: "G",
-                    title: "Google ile devam et",
-                  ),
-
+                  _socialButton(icon: "G", title: "Google ile devam et"),
 
                   const SizedBox(height: 35),
 
@@ -263,7 +288,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ],
-                  )
+                  ),
                 ],
               ),
             ),
@@ -276,8 +301,10 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _inputField({
     required String hint,
     required IconData icon,
+    required TextEditingController controller,
     bool obscure = false,
     Widget? suffix,
+    TextInputType? keyboardType,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -286,28 +313,22 @@ class _LoginScreenState extends State<LoginScreen> {
         border: Border.all(color: kBorder),
       ),
       child: TextField(
+        controller: controller,
+        keyboardType: keyboardType,
         obscureText: obscure,
         style: const TextStyle(color: kText),
         decoration: InputDecoration(
           border: InputBorder.none,
-          prefixIcon: Icon(
-            icon,
-            color: kPrimary,
-          ),
+          prefixIcon: Icon(icon, color: kPrimary),
           suffixIcon: suffix,
           hintText: hint,
-          hintStyle: TextStyle(
-            color: kTextSub,
-          ),
+          hintStyle: TextStyle(color: kTextSub),
         ),
       ),
     );
   }
 
-  Widget _socialButton({
-    required String icon,
-    required String title,
-  }) {
+  Widget _socialButton({required String icon, required String title}) {
     return Container(
       height: 56,
       decoration: BoxDecoration(
@@ -329,10 +350,7 @@ class _LoginScreenState extends State<LoginScreen> {
           const SizedBox(width: 10),
           Text(
             title,
-            style: const TextStyle(
-              color: kText,
-              fontWeight: FontWeight.w700,
-            ),
+            style: const TextStyle(color: kText, fontWeight: FontWeight.w700),
           ),
         ],
       ),

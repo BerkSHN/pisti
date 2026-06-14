@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:pisti_app/services/api_service.dart';
 import 'package:pisti_app/theme/app_colors.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -11,6 +12,70 @@ class RegisterScreen extends StatefulWidget {
 class _RegisterScreenState extends State<RegisterScreen> {
   bool obscurePassword = true;
   bool obscurePassword2 = true;
+  bool _isLoading = false;
+  final _fullNameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _usernameController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _passwordAgainController = TextEditingController();
+
+  @override
+  void dispose() {
+    _fullNameController.dispose();
+    _emailController.dispose();
+    _usernameController.dispose();
+    _passwordController.dispose();
+    _passwordAgainController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _register() async {
+    if (_fullNameController.text.trim().isEmpty ||
+        _emailController.text.trim().isEmpty ||
+        _usernameController.text.trim().isEmpty ||
+        _passwordController.text.isEmpty ||
+        _passwordAgainController.text.isEmpty) {
+      _showMessage("Tüm alanları doldurun");
+      return;
+    }
+
+    if (_passwordController.text != _passwordAgainController.text) {
+      _showMessage("Şifreler eşleşmiyor");
+      return;
+    }
+
+    if (_passwordController.text.length < 6) {
+      _showMessage("Şifre en az 6 karakter olmalı");
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    final result = await ApiService.register(
+      fullName: _fullNameController.text.trim(),
+      email: _emailController.text.trim(),
+      username: _usernameController.text.trim(),
+      password: _passwordController.text,
+    );
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    if (result["success"] == true) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Kayıt başarılı, giriş yapabilirsiniz")),
+      );
+      return;
+    }
+
+    _showMessage(result["message"]?.toString() ?? "Kayıt oluşturulamadı");
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -69,10 +134,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ],
                     ),
                     child: const Center(
-                      child: Text(
-                        "🔥",
-                        style: TextStyle(fontSize: 40),
-                      ),
+                      child: Text("🔥", style: TextStyle(fontSize: 40)),
                     ),
                   ),
 
@@ -122,6 +184,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         _inputField(
                           hint: "Ad Soyad",
                           icon: Icons.person_outline_rounded,
+                          controller: _fullNameController,
                         ),
 
                         const SizedBox(height: 14),
@@ -129,6 +192,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         _inputField(
                           hint: "E-posta",
                           icon: Icons.mail_outline_rounded,
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
                         ),
 
                         const SizedBox(height: 14),
@@ -136,6 +201,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         _inputField(
                           hint: "Kullanıcı Adı",
                           icon: Icons.alternate_email_rounded,
+                          controller: _usernameController,
                         ),
 
                         const SizedBox(height: 14),
@@ -143,6 +209,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         _inputField(
                           hint: "Şifre",
                           icon: Icons.lock_outline_rounded,
+                          controller: _passwordController,
                           obscure: obscurePassword,
                           suffix: IconButton(
                             onPressed: () {
@@ -164,6 +231,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         _inputField(
                           hint: "Şifre Tekrar",
                           icon: Icons.lock_outline_rounded,
+                          controller: _passwordAgainController,
                           obscure: obscurePassword2,
                           suffix: IconButton(
                             onPressed: () {
@@ -186,9 +254,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           width: double.infinity,
                           height: 58,
                           child: ElevatedButton(
-                            onPressed: () {
-                              Navigator.pop(context);
-                            },
+                            onPressed: _isLoading ? null : _register,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: kPrimary,
                               elevation: 0,
@@ -196,14 +262,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 borderRadius: BorderRadius.circular(18),
                               ),
                             ),
-                            child: const Text(
-                              "Kayıt Ol",
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.white,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
+                            child: _isLoading
+                                ? const SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Text(
+                                    "Kayıt Ol",
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
                           ),
                         ),
                       ],
@@ -245,8 +320,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Widget _inputField({
     required String hint,
     required IconData icon,
+    required TextEditingController controller,
     bool obscure = false,
     Widget? suffix,
+    TextInputType? keyboardType,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -255,6 +332,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
         border: Border.all(color: kBorder),
       ),
       child: TextField(
+        controller: controller,
+        keyboardType: keyboardType,
         obscureText: obscure,
         style: const TextStyle(color: kText),
         decoration: InputDecoration(
