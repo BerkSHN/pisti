@@ -8,3 +8,4 @@ db = client.pisti
 
 events_collection = db.events
 users_collection = db.users
+revoked_tokens_collection = db.revoked_tokens

@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 
 class ApiService {
   static const String baseUrl = 'http://127.0.0.1:8000';
+  static String? _accessToken;
 
   static Future<Map<String, dynamic>> register({
     required String fullName,
@@ -38,6 +39,10 @@ class ApiService {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
+        final token = data["access_token"];
+        if (token is String) {
+          _accessToken = token;
+        }
         return {"success": true, ...data};
       }
 
@@ -47,6 +52,25 @@ class ApiService {
       };
     } catch (_) {
       return {"success": false, "message": "Sunucuya bağlanılamadı"};
+    }
+  }
+
+  static Future<bool> logout() async {
+    final token = _accessToken;
+    _accessToken = null;
+
+    if (token == null) {
+      return true;
+    }
+
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUrl/auth/logout"),
+        headers: {"Authorization": "Bearer $token"},
+      );
+      return response.statusCode == 200 || response.statusCode == 401;
+    } catch (_) {
+      return false;
     }
   }
 

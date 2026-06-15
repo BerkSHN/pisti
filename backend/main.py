@@ -1,19 +1,22 @@
 from datetime import datetime, timedelta, timezone
 import os
+from uuid import uuid4
 
 import bcrypt
 import jwt
-from fastapi import FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.middleware.cors import CORSMiddleware
 from bson import ObjectId
 
-from database import events_collection, users_collection
+from database import events_collection, revoked_tokens_collection, users_collection
 from models import Event, LoginRequest, RegisterRequest
 
 app = FastAPI()
 
 JWT_SECRET = os.getenv("JWT_SECRET", "development-secret-change-me")
 JWT_ALGORITHM = "HS256"
+bearer_scheme = HTTPBearer()
 
 app.add_middleware(
     CORSMiddleware,
@@ -58,7 +61,7 @@ def user_serializer(user):
 def create_access_token(user_id: str):
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
     return jwt.encode(
-        {"sub": user_id, "exp": expires_at},
+        {"sub": user_id, "jti": str(uuid4()), "exp": expires_at},
         JWT_SECRET,
         algorithm=JWT_ALGORITHM,
     )
@@ -132,6 +135,40 @@ async def login(request: LoginRequest):
         "token_type": "bearer",
         "user": user_serializer(user),
     }
+
+
+@app.post("/auth/logout")
+async def logout(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+):
+    try:
+        payload = jwt.decode(
+            credentials.credentials,
+            JWT_SECRET,
+            algorithms=[JWT_ALGORITHM],
+        )
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Geçersiz oturum")
+
+    token_id = payload.get("jti")
+    expires_at = payload.get("exp")
+    if not token_id or not expires_at:
+        raise HTTPException(status_code=401, detail="Geçersiz oturum")
+
+    await revoked_tokens_collection.update_one(
+        {"jti": token_id},
+        {
+            "$set": {
+                "jti": token_id,
+                "user_id": payload.get("sub"),
+                "expires_at": datetime.fromtimestamp(expires_at, timezone.utc),
+                "revoked_at": datetime.now(timezone.utc),
+            }
+        },
+        upsert=True,
+    )
+
+    return {"message": "Çıkış başarılı"}
 
 @app.post("/events")
 async def create_event(event: Event):
