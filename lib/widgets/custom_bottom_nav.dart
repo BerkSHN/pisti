@@ -2,12 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:pisti_app/screens/home_page.dart';
 import 'package:pisti_app/screens/profil_page.dart';
 import 'package:pisti_app/theme/app_colors.dart';
+
 class CustomBottomNav extends StatelessWidget {
   final int currentIndex;
+  // 1. Kullanıcı adı verisini karşılayabilmesi için değişken ekliyoruz
+  final String username;
+  // 1. Kullanıcı ID verisini karşılayabilmesi için değişken ekliyoruz
+  final String userId;
+  final List<String> userJoinedEvents;
 
   const CustomBottomNav({
     super.key,
     required this.currentIndex,
+    required this.username,
+    required this.userId,
+    required this.userJoinedEvents, // 1. Zorunlu parametre haline getiriyoruz
+     // 2. Zorunlu parametre haline getiriyoruz
   });
 
   void _navigate(BuildContext context, int index) {
@@ -17,19 +27,21 @@ class CustomBottomNav extends StatelessWidget {
 
     switch (index) {
       case 0:
-        page = const HomeScreen();
+        // 3. Hatanın çözümü: 'widget.username' yerine doğrudan yukarıda tanımladığımız 'username' değişkenini veriyoruz
+        page = HomeScreen(username: username, userId: userId, initialJoinedEvents: userJoinedEvents,);
         break;
       case 1:
-        page = const HomeScreen();
+        // Şimdilik test amaçlı HomeScreen kalabilir, ileride MapScreen() vb. ile değiştirirsiniz
+        page = HomeScreen(username: username , userId: userId, initialJoinedEvents: userJoinedEvents,);
         break;
       case 2:
-        page = const HomeScreen();
+        page = HomeScreen(username: username , userId: userId, initialJoinedEvents: userJoinedEvents,);
         break;
       case 3:
-        page = const ProfileScreen();
+        page = ProfileScreen(userId: userId);
         break;
       default:
-        page = const HomeScreen();
+        page = HomeScreen(username: username, userId: userId, initialJoinedEvents: userJoinedEvents,);
     }
 
     Navigator.pushReplacement(
@@ -58,7 +70,6 @@ class CustomBottomNav extends StatelessWidget {
             current: currentIndex,
             onTap: (i) => _navigate(context, i),
           ),
-
           _NavItem(
             icon: Icons.map_outlined,
             label: 'Harita',
@@ -66,9 +77,7 @@ class CustomBottomNav extends StatelessWidget {
             current: currentIndex,
             onTap: (i) => _navigate(context, i),
           ),
-
           const SizedBox(width: 58),
-
           _NavItem(
             icon: Icons.bookmark_border_rounded,
             label: 'Katıldıklarım',
@@ -76,7 +85,6 @@ class CustomBottomNav extends StatelessWidget {
             current: currentIndex,
             onTap: (i) => _navigate(context, i),
           ),
-
           _NavItem(
             icon: Icons.person_outline_rounded,
             label: 'Profil',
@@ -88,7 +96,6 @@ class CustomBottomNav extends StatelessWidget {
       ),
     );
   }
-
 }
 
 class _NavItem extends StatelessWidget {

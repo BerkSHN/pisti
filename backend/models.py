@@ -26,6 +26,7 @@ class RegisterRequest(BaseModel):
     email: str = Field(min_length=5, max_length=120)
     username: str = Field(min_length=3, max_length=30)
     password: str = Field(min_length=6, max_length=72)
+    joined_events: List[str] = Field(default=[])
 
 
 class LoginRequest(BaseModel):

@@ -1,31 +1,39 @@
 import 'package:flutter/material.dart';
+import 'package:pisti_app/services/api_service.dart'; // ApiService'ini import ettiğinden emin ol
 
-class JoinedPage extends StatelessWidget {
-  JoinedPage({super.key});
+class JoinedPage extends StatefulWidget {
+  final String userId; // <-- Giriş yapan kullanıcının ID'si gerekiyor
 
-  final List<Map<String, dynamic>> joinedEvents = [
-    {
-      'emoji': '🏀',
-      'title': 'Basketbol Maçı',
-      'time': 'Pazar 17:00',
-      'location': 'Kadıköy Spor Salonu',
-      'status': 'Yaklaşıyor',
-    },
-    {
-      'emoji': '☕',
-      'title': 'Sabah Kahvesi Buluşması',
-      'time': 'Cumartesi 09:30',
-      'location': 'Moda Sahili',
-      'status': 'Katıldın',
-    },
-    {
-      'emoji': '🚴',
-      'title': 'Boğaz Bisiklet Turu',
-      'time': 'Pazar 08:00',
-      'location': 'Beşiktaş',
-      'status': 'Planlandı',
-    },
-  ];
+  const JoinedPage({super.key, required this.userId});
+
+  @override
+  State<JoinedPage> createState() => _JoinedPageState();
+}
+
+class _JoinedPageState extends State<JoinedPage> {
+  List<Map<String, dynamic>> _joinedEvents = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchJoinedEvents();
+  }
+
+  // Veritabanından kullanıcının katıldığı etkinlikleri çeken fonksiyon
+  Future<void> _fetchJoinedEvents() async {
+    setState(() => _isLoading = true);
+    try {
+      final data = await ApiService.getUserJoinedEventsDetails(widget.userId);
+      setState(() {
+        _joinedEvents = data;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+      print("JoinedPage yükleme hatası: $e");
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -94,111 +102,146 @@ class JoinedPage extends StatelessWidget {
 
             const SizedBox(height: 12),
 
-            // LIST
+            // LIST VEYA YÜKLENİYOR GÖSTERGESİ
             Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: joinedEvents.length,
-                itemBuilder: (context, index) {
-                  final e = joinedEvents[index];
-
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 14),
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1A1A1A),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.06),
+              child: _isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFF6B00)),
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.4),
-                          blurRadius: 18,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        // emoji
-                        Container(
-                          width: 52,
-                          height: 52,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                const Color(0xFFFF6B00).withValues(alpha: 0.25),
-                                Colors.transparent,
-                              ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Center(
-                            child: Text(
-                              e['emoji'],
-                              style: const TextStyle(fontSize: 24),
-                            ),
-                          ),
-                        ),
+                    )
+                  : _joinedEvents.isEmpty
+                      ? _buildEmptyState()
+                      : RefreshIndicator(
+                          color: const Color(0xFFFF6B00),
+                          backgroundColor: const Color(0xFF1A1A1A),
+                          onRefresh: _fetchJoinedEvents, // Aşağı kaydırınca yeniler
+                          child: ListView.builder(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            itemCount: _joinedEvents.length,
+                            itemBuilder: (context, index) {
+                              final e = _joinedEvents[index];
 
-                        const SizedBox(width: 12),
-
-                        // info
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                e['title'],
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w800,
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 14),
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF1A1A1A),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.06),
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.4),
+                                      blurRadius: 18,
+                                      offset: const Offset(0, 6),
+                                    ),
+                                  ],
                                 ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                "${e['time']} • ${e['location']}",
-                                style: TextStyle(
-                                  color: Colors.grey.shade500,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                                child: Row(
+                                  children: [
+                                    // emoji
+                                    Container(
+                                      width: 52,
+                                      height: 52,
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            const Color(0xFFFF6B00).withValues(alpha: 0.25),
+                                            Colors.transparent,
+                                          ],
+                                          begin: Alignment.topLeft,
+                                          end: Alignment.bottomRight,
+                                        ),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Center(
+                                        child: Text(
+                                          e['emoji'] ?? '🎉',
+                                          style: const TextStyle(fontSize: 24),
+                                        ),
+                                      ),
+                                    ),
 
-                        // status
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: _color(e['status']).withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: _color(e['status']).withValues(alpha: 0.35),
-                            ),
-                          ),
-                          child: Text(
-                            e['status'],
-                            style: TextStyle(
-                              color: _color(e['status']),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                            ),
+                                    const SizedBox(width: 12),
+
+                                    // info
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            e['title'] ?? 'Başlıksız Etkinlik',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            "${e['time'] ?? 'Bugün'} • ${e['location'] ?? 'Belirtilmedi'}",
+                                            style: TextStyle(
+                                              color: Colors.grey.shade500,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+
+                                    // status
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: _color(e['status'] ?? 'Katıldın').withValues(alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(
+                                          color: _color(e['status'] ?? 'Katıldın').withValues(alpha: 0.35),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        e['status'] ?? 'Katıldın',
+                                        style: TextStyle(
+                                          color: _color(e['status'] ?? 'Katıldın'),
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
                           ),
                         ),
-                      ],
-                    ),
-                  );
-                },
-              ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // Henüz hiçbir etkinliğe katılmamışsa gösterilecek şık bir ekran
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.calendar_today_rounded, size: 64, color: Colors.grey.shade700),
+          const SizedBox(height: 16),
+          Text(
+            "Henüz hiçbir etkinliğe katılmadın",
+            style: TextStyle(color: Colors.grey.shade500, fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            "Keşfet sayfasından yeni etkinlikler bulabilirsin.",
+            style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+          ),
+        ],
       ),
     );
   }
