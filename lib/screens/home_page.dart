@@ -18,7 +18,56 @@ final _categories = [
   {'icon': '♟️', 'label': 'Satranç'},
 ];
 
+// 🎯 DÜZELTME: Tek tarih yerine tarih ARALIĞI (başlangıç / bitiş)
+DateTime? _selectedFilterDateStart;
+DateTime? _selectedFilterDateEnd;
+String? _selectedFilterCategory;
 List<Map<String, dynamic>> _events = [];
+
+// 🎯 DÜZELTME: "DD/MM/YYYY" formatındaki event tarihini DateTime'a çeviren yardımcı fonksiyon
+DateTime? _parseEventDate(String? dateStr) {
+  if (dateStr == null || dateStr.isEmpty) return null;
+  final parts = dateStr.split('/');
+  if (parts.length != 3) return null;
+  try {
+    final day = int.parse(parts[0]);
+    final month = int.parse(parts[1]);
+    final year = int.parse(parts[2]);
+    return DateTime(year, month, day);
+  } catch (_) {
+    return null;
+  }
+}
+
+List<Map<String, dynamic>> get _filteredEvents {
+  return _events.where((e) {
+    final matchCategory = _selectedFilterCategory == null ||
+        e['category'] == _selectedFilterCategory;
+
+    bool matchDate = true;
+    if (_selectedFilterDateStart != null && _selectedFilterDateEnd != null) {
+      final eventDate = _parseEventDate(e['date']?.toString());
+      if (eventDate != null) {
+        final startDay = DateTime(
+          _selectedFilterDateStart!.year,
+          _selectedFilterDateStart!.month,
+          _selectedFilterDateStart!.day,
+        );
+        final endDay = DateTime(
+          _selectedFilterDateEnd!.year,
+          _selectedFilterDateEnd!.month,
+          _selectedFilterDateEnd!.day,
+          23, 59, 59,
+        );
+        matchDate = !eventDate.isBefore(startDay) && !eventDate.isAfter(endDay);
+      } else {
+        matchDate = false;
+      }
+    }
+
+    return matchCategory && matchDate;
+  }).toList();
+}
 
 // ─── HOME SCREEN ──────────────────────────────────────────────────────────────
 
@@ -56,7 +105,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     "emoji": _selectedCategoryEmoji,
     "category": _selectedCategoryLabel,
     "categoryColor": "#FF6B00",
-    "joined": 1, // Arayüzün ilk gösterimi için 1 kalabilir
+    "joined": 1,
     "likes": 0,
     "comments": 0, 
     "shares": 0,
@@ -68,8 +117,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     "tags": [_selectedCategoryLabel, "Yeni"],
     "imageUrl": null
   };
-
-  // 1. Backend'e isteği atıyoruz
+    
   final response = await ApiService.createEvent(eventData, widget.userId);
 
   if (!mounted) return;
@@ -80,14 +128,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       final String newEventId = (createdEvent["_id"] ?? createdEvent["id"] ?? "").toString();
       
       if (newEventId.isNotEmpty) {
-        // 2. Önce local hafızayı kesin olarak güncelliyoruz
         setState(() {
           _myJoinedEventIds.add(newEventId);
         });
       }
     }
 
-    // Form alanlarını temizle
     _titleController.clear();
     _locationController.clear();
     _dateController.clear();
@@ -97,8 +143,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     
     _toggleCompose();
 
-    // 🎯 KRİTİK GÜNCELLEME: Listeyi yenileme işlemini 'await' ile bekliyoruz.
-    // Böylece veritabanından veriler tamamen çekilip ekran güncellenene kadar süreç kilitlenir.
     await _loadEvents(); 
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -111,8 +155,42 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 }
 
+  Future<void> _pickDate() async {
+    DateTime? pickedDate = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+      locale: const Locale("tr", "TR"),
+    );
+
+    if (pickedDate != null) {
+      setState(() {
+        _dateController.text =
+            "${pickedDate.day.toString().padLeft(2, '0')}/"
+            "${pickedDate.month.toString().padLeft(2, '0')}/"
+            "${pickedDate.year}";
+      });
+    }
+  }
+
+  Future<void> _pickTime() async {
+    TimeOfDay? pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+    );
+
+    if (pickedTime != null) {
+      setState(() {
+        _timeController.text =
+            "${pickedTime.hour.toString().padLeft(2, '0')}:"
+            "${pickedTime.minute.toString().padLeft(2, '0')}";
+      });
+    }
+  }  
+
+
   final _scrollController = ScrollController();
-  int _selectedCat = -1;
   bool _isComposeExpanded = false;
   late AnimationController _composeAnimCtrl;
   late Animation<double> _composeAnim;
@@ -124,40 +202,28 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final _maxPlayersController = TextEditingController();
   final _descController = TextEditingController();
 
-// Seçili kategori emojisi ve rengini yönetmek için (Örnek varsayılan değerler)
   String _selectedCategoryLabel = 'Spor';
   String _selectedCategoryEmoji = '🏀';
   Color _selectedCategoryColor = const Color(0xFFFF6B00);
-
-
+  
 Future<void> _loadEvents() async {
   try {
-    // 1. Hem etkinlik havuzunu hem de kullanıcının veritabanındaki en güncel katılım listesini ÇEKİYORUZ
     final data = await ApiService.getEvents();
-    
-    // Hatırlatma: Bir önceki adımda api_service.dart dosyasına eklediğimiz fonksiyon
     final updatedJoinedEvents = await ApiService.getUserJoinedEvents(widget.userId);
-
-    print("GELEN ETKİNLİK DATASI: $data");
-    print("SEKME DEĞİŞTİRİP DÖNDÜKTEN SONRAKİ GÜNCEL KATILIM LİSTESİ: $updatedJoinedEvents");
 
     if (!mounted) return;
 
     setState(() {
-  _events = List<Map<String, dynamic>>.from(data);
-  
-  // Veritabanından gelen güncel katılım listesini doğrudan set et
-  _myJoinedEventIds = Set<String>.from(updatedJoinedEvents);
-  
-  // Ekstra Güvenlik: Eğer gelen listede bu event ID'si yoksa yerel kümeden de uçur
-  _joinedCounts.clear();
-  for (var event in _events) {
-    final String eventId = (event['_id'] ?? event['id'] ?? '').toString();
-    if (eventId.isNotEmpty) {
-      _joinedCounts[eventId] = int.tryParse(event['joined'].toString()) ?? 0;
-    }
-  }
-});
+      _events = List<Map<String, dynamic>>.from(data);
+      _myJoinedEventIds = Set<String>.from(updatedJoinedEvents);
+      _joinedCounts.clear();
+      for (var event in _events) {
+        final String eventId = (event['_id'] ?? event['id'] ?? '').toString();
+        if (eventId.isNotEmpty) {
+          _joinedCounts[eventId] = int.tryParse(event['joined'].toString()) ?? 0;
+        }
+      }
+    });
   } catch (e) {
     print("LOAD EVENTS HATASI: $e");
   }
@@ -204,13 +270,11 @@ void initState() {
 
  void _onJoinChanged(String eventId, bool joined) {
   setState(() {
-    // Haritada değer yoksa bile veritabanından o an kartın üzerinde yazan güncel değeri referans alıyoruz
     final currentCount = _joinedCounts[eventId] ?? 0; 
     
     if (joined) {
       _joinedCounts[eventId] = currentCount + 1;
     } else {
-      // Sayının sıfırın altına düşmesini engellemek için clamp/önlem koyuyoruz
       _joinedCounts[eventId] = (currentCount - 1).clamp(0, 9999);
     }
   });
@@ -220,58 +284,67 @@ void initState() {
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
-      child: Scaffold(
-        backgroundColor: kBg,
-        body: SafeArea(
-          child: Column(
-            children: [
-              _buildTopBar(),
-              Expanded(
-  child: CustomScrollView(
-    controller: _scrollController,
-    physics: const BouncingScrollPhysics(),
-    slivers: [
-      SliverToBoxAdapter(child: _buildComposeBox()),
-      SliverToBoxAdapter(child: _buildCategoryRow()),
-      SliverToBoxAdapter(child: _buildSectionHeader()),
-      SliverList(
-  delegate: SliverChildBuilderDelegate(
-    (ctx, i) {
-      final String currentEventId = (_events[i]['_id'] ?? _events[i]['id'] ?? '').toString();
-      final bool hasJoinedBefore = _myJoinedEventIds.contains(currentEventId);
-      final int currentCount = _joinedCounts[currentEventId] ?? int.tryParse(_events[i]['joined'].toString()) ?? 0;
-
-      return _EventCard(
-        // 🎯 İŞTE EN KRİTİK DÜZELTME: Flutter'ın eski durumu korumasını engeller
-        key: ValueKey(currentEventId), 
-        event: _events[i],
-        eventId: currentEventId, 
-        userId: widget.userId, 
-        isAlreadyJoined: hasJoinedBefore, 
-        currentJoined: currentCount,
-        onJoinChanged: (joined) {
-          _onJoinChanged(currentEventId, joined);
-          setState(() {
-            if (joined) {
-              _myJoinedEventIds.add(currentEventId);
-            } else {
-              _myJoinedEventIds.remove(currentEventId);
-            }
-          });
+      // 🎯 DÜZELTME: Compose açıkken dışarıya tıklanınca kapanması için GestureDetector sarıldı
+      child: GestureDetector(
+        onTap: () {
+          if (_isComposeExpanded) {
+            _toggleCompose();
+            FocusScope.of(context).unfocus();
+          }
         },
-      );
-    },
-    childCount: _events.length,
-  ),
-),
-      const SliverToBoxAdapter(child: SizedBox(height: 120)),
-    ],
-  ),
-)
-            ],
+        behavior: HitTestBehavior.translucent,
+        child: Scaffold(
+          backgroundColor: kBg,
+          body: SafeArea(
+            child: Column(
+              children: [
+                _buildTopBar(),
+                Expanded(
+                  child: CustomScrollView(
+                    controller: _scrollController,
+                    physics: const BouncingScrollPhysics(),
+                    slivers: [
+                      SliverToBoxAdapter(child: _buildComposeBox()),
+                      // 🎯 DÜZELTME: Kategori satırı kaldırıldı (_buildCategoryRow() silindi)
+                      SliverToBoxAdapter(child: _buildSectionHeader()),
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (ctx, i) {
+                            final filtered = _filteredEvents;
+                            final String currentEventId = (filtered[i]['_id'] ?? filtered[i]['id'] ?? '').toString();
+                            final bool hasJoinedBefore = _myJoinedEventIds.contains(currentEventId);
+                            final int currentCount = _joinedCounts[currentEventId] ?? int.tryParse(filtered[i]['joined'].toString()) ?? 0;
+
+                            return _EventCard(
+                              key: ValueKey(currentEventId), 
+                              event: filtered[i],
+                              eventId: currentEventId, 
+                              userId: widget.userId, 
+                              isAlreadyJoined: hasJoinedBefore, 
+                              currentJoined: currentCount,
+                              onJoinChanged: (joined) {
+                                _onJoinChanged(currentEventId, joined);
+                                setState(() {
+                                  if (joined) {
+                                    _myJoinedEventIds.add(currentEventId);
+                                  } else {
+                                    _myJoinedEventIds.remove(currentEventId);
+                                  }
+                                });
+                              },
+                            );
+                          },
+                          childCount: _filteredEvents.length,
+                        ),
+                      ),
+                      const SliverToBoxAdapter(child: SizedBox(height: 120)),
+                    ],
+                  ),
+                )
+              ],
+            ),
           ),
         ),
-
       ),
     );
   }
@@ -297,132 +370,38 @@ void initState() {
   // ── COMPOSE BOX ────────────────────────────────────────────────────────────
 
   Widget _buildComposeBox() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-      decoration: BoxDecoration(
-        color: kCard,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: kBorder),
-        boxShadow: [
-          BoxShadow(
-            color: kPrimary.withValues(alpha: 0.12),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Container(
-                  width: 42, height: 42,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [kPrimary, kPrimaryDark],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: kPrimary.withValues(alpha: 0.45),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: const Center(
-                    child: Text('S',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 18,
-                      )),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: GestureDetector(
-  onTap: () {
-    if (_isComposeExpanded) {
-      // Form açıksa FastAPI'ye pushla
-      _submitEvent();
-    } else {
-      // Form kapalıysa formu genişlet/aç
-      _toggleCompose();
-    }
-  },
-  child: Container(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-    decoration: BoxDecoration(
-      // Form açıkken dikkat çekmesi için ana rengini (Örn: Turuncu) verebilirsin, kapalıyken orijinal kCardElevated kalır
-      color: _isComposeExpanded ? const Color(0xFFFF6B00) : kCardElevated,
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: _isComposeExpanded ? Colors.transparent : kBorder),
-    ),
-    child: Row(
-      mainAxisAlignment: MainAxisAlignment.center, // Yazıyı ortalamak için
-      children: [
-        Text(
-          // Duruma göre metin değişiyor
-          _isComposeExpanded ? 'Etkinliği Paylaş' : 'Ne yapmak istiyorsun?',
-          style: TextStyle(
-            // Form açıkken arka plan turuncu olacağı için metni beyaz yapıyoruz
-            color: _isComposeExpanded ? Colors.white : kTextSub,
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const Spacer(),
-        // Duruma göre sağdaki ikon veya emoji değişiyor
-        Text(
-          _isComposeExpanded ? '🚀' : '🎯', 
-          style: const TextStyle(fontSize: 16),
-        ),
-      ],
-    ),
-  ),
-),
-                ),
-              ],
+    return GestureDetector(
+      // İç tıklamaların üst GestureDetector'a geçmesini engelle
+      onTap: () {},
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+        decoration: BoxDecoration(
+          color: kCard,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: kBorder),
+          boxShadow: [
+            BoxShadow(
+              color: kPrimary.withValues(alpha: 0.12),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
             ),
-          ),
-          AnimatedBuilder(
-            animation: _composeAnim,
-            builder: (context, child) {
-              return ClipRect(
-                child: Align(
-                  heightFactor: _composeAnim.value,
-                  child: child,
-                ),
-              );
-            },
-            child: _buildExpandedCompose(),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Row(
-              children: [
-                _QuickChip(icon: '🏀', label: 'Spor', color: kPrimary),
-                const SizedBox(width: 8),
-                _QuickChip(icon: '☕', label: 'Sosyal', color: kAmber),
-                const SizedBox(width: 8),
-                _QuickChip(icon: '🗺️', label: 'Harita', color: kMint),
-                const Spacer(),
-                GestureDetector(
-                  onTap: _toggleCompose,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          ],
+        ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Container(
+                    width: 42, height: 42,
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
                         colors: [kPrimary, kPrimaryDark],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
-                      borderRadius: BorderRadius.circular(20),
+                      shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
                           color: kPrimary.withValues(alpha: 0.45),
@@ -431,178 +410,393 @@ void initState() {
                         ),
                       ],
                     ),
+                    child: const Center(
+                      child: Text('S',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 18,
+                        )),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        if (_isComposeExpanded) {
+                          _submitEvent();
+                        } else {
+                          _toggleCompose();
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+                        decoration: BoxDecoration(
+                          color: _isComposeExpanded ? const Color(0xFFFF6B00) : kCardElevated,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: _isComposeExpanded ? Colors.transparent : kBorder),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              _isComposeExpanded ? 'Etkinliği Paylaş' : 'Ne yapmak istiyorsun?',
+                              style: TextStyle(
+                                color: _isComposeExpanded ? Colors.white : kTextSub,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const Spacer(),
+                            Text(
+                              _isComposeExpanded ? '🚀' : '🎯', 
+                              style: const TextStyle(fontSize: 16),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            AnimatedBuilder(
+              animation: _composeAnim,
+              builder: (context, child) {
+                return ClipRect(
+                  child: Align(
+                    heightFactor: _composeAnim.value,
+                    child: child,
+                  ),
+                );
+              },
+              child: _buildExpandedCompose(),
+            ),
+            // 🎯 DÜZELTME: Alttaki "Paylaş" butonu kaldırıldı, sadece QuickChip'ler kaldı
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Row(
+                children: [
+                  _QuickChip(icon: '🏀', label: 'Spor', color: kPrimary),
+                  const SizedBox(width: 8),
+                  _QuickChip(icon: '☕', label: 'Sosyal', color: kAmber),
+                  const SizedBox(width: 8),
+                  _QuickChip(icon: '🗺️', label: 'Harita', color: kMint),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExpandedCompose() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Divider(color: kDivider, height: 1),
+          const SizedBox(height: 14),
+          
+          TextField(
+            controller: _titleController,
+            decoration: const InputDecoration(hintText: '🎯  Etkinlik adı (ör. "Basketbol maçı")'),
+          ),
+          const SizedBox(height: 8),
+          
+          TextField(
+            controller: _locationController,
+            decoration: const InputDecoration(hintText: '📍  Konum'),
+          ),
+          const SizedBox(height: 8),
+          
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _dateController,
+                  readOnly: true,
+                  onTap: _pickDate,
+                  decoration: const InputDecoration(
+                    hintText: '📅  Tarih seç',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: _timeController,
+                  readOnly: true,
+                  onTap: _pickTime,
+                  decoration: const InputDecoration(
+                    hintText: '🕐  Saat seç',
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          
+          TextField(
+            controller: _maxPlayersController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(hintText: '👥  Maks. katılımcı sayısı'),
+          ),
+          const SizedBox(height: 8),
+
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: kCardElevated,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: kBorder),
+            ),
+            child: TextField(
+              controller: _descController,
+              maxLines: 3,
+              style: const TextStyle(fontSize: 14, color: kText),
+              decoration: InputDecoration.collapsed(
+                hintText: '✍️  Açıklama ekle...',
+                hintStyle: TextStyle(color: kTextSub, fontSize: 14),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: _categories.map((c) {
+                final isSelected = _selectedCategoryLabel == c['label'];
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ChoiceChip(
+                    label: Text(c['label'] as String),
+                    selected: isSelected,
+                    onSelected: (bool selected) {
+                      setState(() {
+                        _selectedCategoryLabel = c['label'] as String;
+                        _selectedCategoryEmoji = c['icon'] as String;
+                        if (_selectedCategoryLabel == 'Spor') _selectedCategoryColor = const Color(0xFFFF6B00);
+                        else _selectedCategoryColor = Colors.blue; 
+                      });
+                    },
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  // ── SECTION HEADER ──────────────────────────────────────────────────────────
+  
+  Widget _buildSectionHeader() 
+  { void _openFilterSheet() {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    builder: (_) {
+      return StatefulBuilder(
+        builder: (context, setModalState) {
+          return Container(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 30),
+            decoration: const BoxDecoration(
+              color: kCard,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: kTextSub.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                const Text(
+                  "FİLTRELE",
+                  style: TextStyle(
+                    color: kText,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1,
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                Container(
+                  decoration: BoxDecoration(
+                    color: kCardElevated,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: kBorder),
+                  ),
+                  child: ListTile(
+                    leading: Icon(Icons.date_range_rounded, color: kPrimary),
+                    title: Text(
+                      (_selectedFilterDateStart == null || _selectedFilterDateEnd == null)
+                          ? "Tarih aralığı seç"
+                          : "${_selectedFilterDateStart!.day}.${_selectedFilterDateStart!.month}.${_selectedFilterDateStart!.year}  -  "
+                            "${_selectedFilterDateEnd!.day}.${_selectedFilterDateEnd!.month}.${_selectedFilterDateEnd!.year}",
+                      style: const TextStyle(
+                        color: kText,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    trailing: const Icon(Icons.arrow_forward_ios_rounded,
+                        size: 14, color: kTextSub),
+                    onTap: () async {
+                      final pickedRange = await showDateRangePicker(
+                        context: context,
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime(2100),
+                        initialDateRange: (_selectedFilterDateStart != null && _selectedFilterDateEnd != null)
+                            ? DateTimeRange(
+                                start: _selectedFilterDateStart!,
+                                end: _selectedFilterDateEnd!,
+                              )
+                            : null,
+                        locale: const Locale("tr", "TR"),
+                      );
+
+                      if (pickedRange != null) {
+                        setModalState(() {
+                          _selectedFilterDateStart = pickedRange.start;
+                          _selectedFilterDateEnd = pickedRange.end;
+                        });
+                        setState(() {});
+                      }
+                    },
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                const Text(
+                  "Kategori",
+                  style: TextStyle(
+                    color: kTextSub,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1,
+                  ),
+                ),
+
+                const SizedBox(height: 10),
+
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _categories.map((c) {
+                    final selected =
+                        _selectedFilterCategory == c['label'];
+
+                    return GestureDetector(
+                      onTap: () {
+                        setModalState(() {
+                          _selectedFilterCategory =
+                              selected ? null : c['label'] as String;
+                        });
+                        setState(() {});
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? kPrimary
+                              : kCardElevated,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: selected
+                                ? kPrimary
+                                : kBorder,
+                          ),
+                          boxShadow: selected
+                              ? [
+                                  BoxShadow(
+                                    color: kPrimary.withValues(alpha: 0.3),
+                                    blurRadius: 12,
+                                  )
+                                ]
+                              : [],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(c['icon'] as String),
+                            const SizedBox(width: 6),
+                            Text(
+                              c['label'] as String,
+                              style: TextStyle(
+                                color: selected
+                                    ? Colors.white
+                                    : kText,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+
+                const SizedBox(height: 20),
+
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: OutlinedButton(
+                    onPressed: () {
+                      setState(() {
+                        _selectedFilterCategory = null;
+                        _selectedFilterDateStart = null;
+                        _selectedFilterDateEnd = null;
+                      });
+                      Navigator.pop(context);
+                    },
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: kPrimary.withValues(alpha: 0.5)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
                     child: const Text(
-                      'Paylaş',
+                      "FİLTREYİ SIFIRLA",
                       style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
+                        color: kPrimary,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
                   ),
                 ),
               ],
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildExpandedCompose() {
-  return Padding(
-    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Divider(color: kDivider, height: 1),
-        const SizedBox(height: 14),
-        // ... Fotoğraf ekle alanı aynı kalabilir
-        
-        // Etkinlik Adı
-        TextField(
-          controller: _titleController,
-          decoration: const InputDecoration(hintText: '🎯  Etkinlik adı (ör. "Basketbol maçı")'),
-        ),
-        const SizedBox(height: 8),
-        
-        // Konum
-        TextField(
-          controller: _locationController,
-          decoration: const InputDecoration(hintText: '📍  Konum'),
-        ),
-        const SizedBox(height: 8),
-        
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _dateController,
-                decoration: const InputDecoration(hintText: '📅  Tarih'),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: TextField(
-                controller: _timeController,
-                decoration: const InputDecoration(hintText: '🕐  Saat'),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        
-        // Maks Katılımcı
-        TextField(
-          controller: _maxPlayersController,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(hintText: '👥  Maks. katılımcı sayısı'),
-        ),
-        const SizedBox(height: 8),
-        
-        // Açıklama
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: kCardElevated,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: kBorder),
-          ),
-          child: TextField(
-            controller: _descController,
-            maxLines: 3,
-            style: const TextStyle(fontSize: 14, color: kText),
-            decoration: InputDecoration.collapsed(
-              hintText: '✍️  Açıklama ekle...',
-              hintStyle: TextStyle(color: kTextSub, fontSize: 14),
-            ),
-          ),
-        ),
-        const SizedBox(height: 10),
-        
-        // Kategori Seçim Alanı
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: _categories.map((c) {
-              final isSelected = _selectedCategoryLabel == c['label'];
-              return Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: ChoiceChip(
-                  label: Text(c['label'] as String),
-                  selected: isSelected,
-                  onSelected: (bool selected) {
-                    setState(() {
-                      _selectedCategoryLabel = c['label'] as String;
-                      _selectedCategoryEmoji = c['icon'] as String;
-                      // Kategoriye göre renk ataması yapabilirsiniz (Örn: Spor ise turuncu)
-                      if (_selectedCategoryLabel == 'Spor') _selectedCategoryColor = const Color(0xFFFF6B00);
-                      else _selectedCategoryColor = Colors.blue; 
-                    });
-                  },
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-        const SizedBox(height: 8),
-      ],
-    ),
-  );
-}
-
-  // ── CATEGORIES ─────────────────────────────────────────────────────────────
-
-  Widget _buildCategoryRow() {
-    return SizedBox(
-      height: 64,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: _categories.length,
-        itemBuilder: (ctx, i) {
-          final cat = _categories[i];
-          final selected = _selectedCat == i;
-          return GestureDetector(
-            onTap: () => setState(() => _selectedCat = selected ? -1 : i),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeInOut,
-              margin: const EdgeInsets.only(right: 8, top: 10, bottom: 10),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-              decoration: BoxDecoration(
-                color: selected ? kPrimary : kCard,
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: selected ? kPrimary : kBorder),
-                boxShadow: selected
-                    ? [BoxShadow(color: kPrimary.withValues(alpha: 0.4), blurRadius: 12, offset: const Offset(0, 4))]
-                    : [],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(cat['icon'] as String, style: const TextStyle(fontSize: 15)),
-                  const SizedBox(width: 6),
-                  Text(
-                    cat['label'] as String,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: selected ? Colors.white : kText,
-                    ),
-                  ),
-                ],
-              ),
-            ),
           );
         },
-      ),
-    );
-  }
-
-  // ── SECTION HEADER ──────────────────────────────────────────────────────────
-
-  Widget _buildSectionHeader() {
+      );
+    },
+  );
+}
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 6),
       child: Row(
@@ -620,13 +814,14 @@ void initState() {
                 ),
               ),
               Text(
-                'Edirne · ${_events.length} etkinlik',
+                'Edirne · ${_filteredEvents.length} etkinlik',
                 style: TextStyle(fontSize: 12, color: kTextSub, fontWeight: FontWeight.w500),
               ),
             ],
           ),
           const Spacer(),
           GestureDetector(
+            onTap: _openFilterSheet,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
@@ -719,7 +914,6 @@ class _PishtiLogo extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Flame + People logo
         Container(
           width: 38, height: 38,
           decoration: BoxDecoration(
@@ -751,7 +945,6 @@ class _PishtiLogo extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 10),
-        // Wordmark
         Row(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -805,21 +998,18 @@ class _PishtiLogoPainter extends CustomPainter {
       ..strokeWidth = 1.4
       ..strokeCap = StrokeCap.round;
 
-    // Left person
     canvas.drawCircle(Offset(size.width * 0.28, size.height * 0.28), 2.6, paint);
     final leftBody = Path()
       ..moveTo(size.width * 0.12, size.height * 0.82)
       ..quadraticBezierTo(size.width * 0.28, size.height * 0.58, size.width * 0.44, size.height * 0.82);
     canvas.drawPath(leftBody, strokePaint..style = PaintingStyle.stroke);
 
-    // Right person
     canvas.drawCircle(Offset(size.width * 0.72, size.height * 0.28), 2.6, paint..color = Colors.white.withValues(alpha: 0.85));
     final rightBody = Path()
       ..moveTo(size.width * 0.56, size.height * 0.82)
       ..quadraticBezierTo(size.width * 0.72, size.height * 0.58, size.width * 0.88, size.height * 0.82);
     canvas.drawPath(rightBody, strokePaint..color = Colors.white.withValues(alpha: 0.85));
 
-    // Connection spark / flame between them
     final flamePaint = Paint()
       ..color = kAccent
       ..style = PaintingStyle.fill;
@@ -942,27 +1132,26 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
   late AnimationController _likeAnim;
   late Animation<double> _likeScale;
 
+  // 🎯 YENİ: Yorum listesi ve yorum sayacı
+  List<Map<String, dynamic>> _comments = [];
+  bool _showComments = false;
+  final _commentController = TextEditingController();
 
   Color _parseHexColor(String? hexString) {
-  if (hexString == null || hexString.isEmpty) {
-    return Colors.blue; // Eğer renk boş gelirse varsayılan bir renk dönsün
+    if (hexString == null || hexString.isEmpty) {
+      return Colors.blue;
+    }
+    String cleanHex = hexString.replaceAll('#', '');
+    if (cleanHex.length == 6) {
+      cleanHex = 'FF' + cleanHex;
+    }
+    return Color(int.parse(cleanHex, radix: 16));
   }
-  // Başındaki # işaretini kaldırıyoruz
-  String cleanHex = hexString.replaceAll('#', '');
-  
-  // Eğer 6 karakterliyse (örn: ff6b00), başına opaklık değeri olan FF'i ekliyoruz (FFFF6B00)
-  if (cleanHex.length == 6) {
-    cleanHex = 'FF' + cleanHex;
-  }
-  
-  // Onaltılık (Hexadecimal) tabanda sayıya çevirip Color nesnesi üretiyoruz
-  return Color(int.parse(cleanHex, radix: 16));
-}
 
   @override
   void initState() {
     super.initState();
-    _joined = widget.isAlreadyJoined; // Başlangıçta kartın prop'una göre katılım durumunu ayarla
+    _joined = widget.isAlreadyJoined;
     _likeCount = int.parse(widget.event['likes'].toString());
     _likeAnim = AnimationController(
       vsync: this,
@@ -977,20 +1166,19 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
   @override
   void dispose() {
     _likeAnim.dispose();
+    _commentController.dispose();
     super.dispose();
   }
 
   @override
-void didUpdateWidget(covariant _EventCard oldWidget) {
-  super.didUpdateWidget(oldWidget);
-  // 🎯 Üst sayfadan gelen katılım durumu (true/false) değiştiyse, 
-  // kartın kendi içindeki durumu da zorunlu olarak güncelle!
-  if (widget.isAlreadyJoined != oldWidget.isAlreadyJoined) {
-    setState(() {
-      _joined = widget.isAlreadyJoined; 
-    });
+  void didUpdateWidget(covariant _EventCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isAlreadyJoined != oldWidget.isAlreadyJoined) {
+      setState(() {
+        _joined = widget.isAlreadyJoined; 
+      });
+    }
   }
-}
 
   void _toggleLike() {
     setState(() {
@@ -1001,21 +1189,41 @@ void didUpdateWidget(covariant _EventCard oldWidget) {
     HapticFeedback.lightImpact();
   }
 
+  // 🎯 YENİ: Yorum bölümünü aç/kapat
+  void _toggleComments() {
+    setState(() {
+      _showComments = !_showComments;
+    });
+    HapticFeedback.lightImpact();
+  }
+
+  // 🎯 YENİ: Yorum gönder
+  void _submitComment() {
+    final text = _commentController.text.trim();
+    if (text.isEmpty) return;
+
+    setState(() {
+      _comments.add({
+        'author': 'Sen',
+        'text': text,
+        'time': 'Şimdi',
+      });
+    });
+    _commentController.clear();
+    HapticFeedback.lightImpact();
+  }
+
 void _toggleJoin(bool isFull) async {
-  // Eğer kontenjan doluysa ve kullanıcı henüz katılmadıysa işlem yapma
   if (isFull && !_joined) return;
 
   final newJoined = !_joined;
 
-  // ÖNEMLİ: Arayüzün anlık tepki vermesi için widget'ın onJoinChanged tetikleyicisini
-  // fonksiyonun en başında çağırıyoruz. (Arayüz anlık güncelleniyor)
   widget.onJoinChanged(newJoined);
   setState(() {
     _joined = newJoined;
   });
 
   if (newJoined) {
-    // DURUM 1: Veritabanında Katılma İşlemi
     print("API'YE GİDEN KATILMA İSTEĞİ -> userId: '${widget.userId}', eventId: '${widget.eventId}'");
     
     final result = await ApiService.joinEvent(
@@ -1024,7 +1232,6 @@ void _toggleJoin(bool isFull) async {
     );
 
     if (result["success"] != true) {
-      // Eğer veritabanı işlemi başarısız olursa arayüzü eski haline geri çekiyoruz (Rollback)
       widget.onJoinChanged(!newJoined);
       setState(() {
         _joined = !newJoined;
@@ -1034,7 +1241,6 @@ void _toggleJoin(bool isFull) async {
       );
     }
   } else {
-    // DURUM 2: Veritabanında Ayrılma İşlemi
     print("API'YE GİDEN AYRILMA İSTEĞİ -> userId: '${widget.userId}', eventId: '${widget.eventId}'");
 
     final result = await ApiService.leaveEvent(
@@ -1043,7 +1249,6 @@ void _toggleJoin(bool isFull) async {
     );
 
     if (result["success"] != true) {
-      // Başarısızlık durumunda geri al
       widget.onJoinChanged(!newJoined);
       setState(() {
         _joined = !newJoined;
@@ -1066,18 +1271,19 @@ void _toggleJoin(bool isFull) async {
 
   @override
   Widget build(BuildContext context) {
-   final e = widget.event;
-  final joined = widget.currentJoined;
-  final max = int.parse(e['max'].toString());
-  final pct = (joined / max).clamp(0.0, 1.0);
-  final isFull = joined >= max;
-  final tags = List<String>.from(e['tags'] ?? []); 
+    final e = widget.event;
+    final joined = widget.currentJoined;
+    final max = int.parse(e['max'].toString());
+    final pct = (joined / max).clamp(0.0, 1.0);
+    final isFull = joined >= max;
+    final tags = List<String>.from(e['tags'] ?? []); 
 
-  // 1. KATEGORİ RENGİ İÇİN DÖNÜŞÜM
-  final catColor = _parseHexColor(e['categoryColor']?.toString()); 
+    final catColor = _parseHexColor(e['categoryColor']?.toString()); 
+    final avatarColor = _parseHexColor(e['avatarColor']?.toString());
 
-  // 2. AVATAR RENGİ İÇİN DÖNÜŞÜM (Hata buradaki 'as Color' yüzünden de kalmış olabilir)
-  final avatarColor = _parseHexColor(e['avatarColor']?.toString());
+    // 🎯 YENİ: Toplam yorum sayısı (backend'den gelen + yerel eklenen)
+    final int baseCommentCount = int.tryParse(e['comments'].toString()) ?? 0;
+    final int totalComments = baseCommentCount + _comments.length;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 6, 16, 6),
@@ -1271,6 +1477,7 @@ void _toggleJoin(bool isFull) async {
             padding: const EdgeInsets.fromLTRB(12, 10, 16, 14),
             child: Row(
               children: [
+                // 🎯 DÜZELTME: Beğeni butonu çalışır hale getirildi
                 GestureDetector(
                   onTap: _toggleLike,
                   child: ScaleTransition(
@@ -1283,12 +1490,19 @@ void _toggleJoin(bool isFull) async {
                   ),
                 ),
                 const SizedBox(width: 4),
-                _ActionBtn(
-                  icon: Icons.chat_bubble_outline_rounded,
-                  label: '${e['comments']}',
-                  color: kTextSub,
+                // 🎯 DÜZELTME: Yorum butonu tıklanınca yorum bölümünü açıyor
+                GestureDetector(
+                  onTap: _toggleComments,
+                  child: _ActionBtn(
+                    icon: _showComments
+                        ? Icons.chat_bubble_rounded
+                        : Icons.chat_bubble_outline_rounded,
+                    label: '$totalComments',
+                    color: _showComments ? kPrimary : kTextSub,
+                  ),
                 ),
                 const SizedBox(width: 4),
+                // 🎯 DÜZELTME: Paylaş butonu çalışır hale getirildi
                 GestureDetector(
                   onTap: _shareEvent,
                   child: _ActionBtn(
@@ -1356,6 +1570,160 @@ void _toggleJoin(bool isFull) async {
                   ),
                 ),
               ],
+            ),
+          ),
+
+          // 🎯 YENİ: Yorum bölümü (açılır/kapanır)
+          AnimatedSize(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOutCubic,
+            child: _showComments
+                ? _buildCommentsSection()
+                : const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 🎯 YENİ: Yorum bölümü widget'ı
+  Widget _buildCommentsSection() {
+    return Container(
+      decoration: BoxDecoration(
+        color: kCardElevated,
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
+        border: Border(top: BorderSide(color: kDivider, width: 0.5)),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Mevcut yorumlar
+          if (_comments.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                'Henüz yorum yok. İlk yorumu sen yap!',
+                style: TextStyle(fontSize: 13, color: kTextSub),
+              ),
+            )
+          else
+            ...(_comments.map((c) => _buildCommentItem(c)).toList()),
+
+          const SizedBox(height: 10),
+
+          // Yorum yazma alanı
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: kCard,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: kBorder),
+                  ),
+                  child: TextField(
+                    controller: _commentController,
+                    style: const TextStyle(fontSize: 13, color: kText),
+                    decoration: InputDecoration.collapsed(
+                      hintText: 'Yorum yaz...',
+                      hintStyle: TextStyle(color: kTextSub, fontSize: 13),
+                    ),
+                    onSubmitted: (_) => _submitComment(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: _submitComment,
+                child: Container(
+                  width: 40, height: 40,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [kPrimary, kPrimaryDark],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: kPrimary.withValues(alpha: 0.4),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.send_rounded, size: 18, color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 🎯 YENİ: Tek yorum satırı widget'ı
+  Widget _buildCommentItem(Map<String, dynamic> comment) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 30, height: 30,
+            decoration: BoxDecoration(
+              color: kPrimary.withValues(alpha: 0.2),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                (comment['author'] as String)[0].toUpperCase(),
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: kPrimary,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: kCard,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: kBorder),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        comment['author'] as String,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: kText,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        comment['time'] as String,
+                        style: TextStyle(fontSize: 10, color: kTextSub),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    comment['text'] as String,
+                    style: TextStyle(fontSize: 13, color: kText.withValues(alpha: 0.8)),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
