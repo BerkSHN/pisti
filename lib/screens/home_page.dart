@@ -18,11 +18,32 @@ final _categories = [
   {'icon': '♟️', 'label': 'Satranç'},
 ];
 
+// 🎯 YENİ: 81 il listesi (şehir seçici için)
+const List<String> _turkishCities = [
+  'Tümü',
+  'Adana', 'Adıyaman', 'Afyonkarahisar', 'Ağrı', 'Aksaray', 'Amasya', 'Ankara',
+  'Antalya', 'Ardahan', 'Artvin', 'Aydın', 'Balıkesir', 'Bartın', 'Batman',
+  'Bayburt', 'Bilecik', 'Bingöl', 'Bitlis', 'Bolu', 'Burdur', 'Bursa',
+  'Çanakkale', 'Çankırı', 'Çorum', 'Denizli', 'Diyarbakır', 'Düzce', 'Edirne',
+  'Elazığ', 'Erzincan', 'Erzurum', 'Eskişehir', 'Gaziantep', 'Giresun',
+  'Gümüşhane', 'Hakkari', 'Hatay', 'Iğdır', 'Isparta', 'İstanbul', 'İzmir',
+  'Kahramanmaraş', 'Karabük', 'Karaman', 'Kars', 'Kastamonu', 'Kayseri',
+  'Kilis', 'Kırıkkale', 'Kırklareli', 'Kırşehir', 'Kocaeli', 'Konya',
+  'Kütahya', 'Malatya', 'Manisa', 'Mardin', 'Mersin', 'Muğla', 'Muş',
+  'Nevşehir', 'Niğde', 'Ordu', 'Osmaniye', 'Rize', 'Sakarya', 'Samsun',
+  'Siirt', 'Sinop', 'Sivas', 'Şanlıurfa', 'Şırnak', 'Tekirdağ', 'Tokat',
+  'Trabzon', 'Tunceli', 'Uşak', 'Van', 'Yalova', 'Yozgat', 'Zonguldak',
+];
+
 // 🎯 DÜZELTME: Tek tarih yerine tarih ARALIĞI (başlangıç / bitiş)
 DateTime? _selectedFilterDateStart;
 DateTime? _selectedFilterDateEnd;
 String? _selectedFilterCategory;
 List<Map<String, dynamic>> _events = [];
+
+// 🎯 YENİ: Seçili şehir (üst bardaki konum pili) ve arama metni
+String _selectedCity = 'Edirne';
+String _searchQuery = '';
 
 // 🎯 DÜZELTME: "DD/MM/YYYY" formatındaki event tarihini DateTime'a çeviren yardımcı fonksiyon
 DateTime? _parseEventDate(String? dateStr) {
@@ -65,8 +86,144 @@ List<Map<String, dynamic>> get _filteredEvents {
       }
     }
 
-    return matchCategory && matchDate;
+    // 🎯 YENİ: Şehre göre filtrele (üst bardaki konum pili). "Tümü" ise filtre uygulanmaz.
+    final matchCity = _selectedCity == 'Tümü' ||
+        (e['city']?.toString().trim().toLowerCase() ==
+            _selectedCity.trim().toLowerCase());
+
+    // 🎯 YENİ: Arama çubuğuna göre filtrele
+    bool matchSearch = true;
+    final q = _searchQuery.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      final title = (e['title']?.toString() ?? '').toLowerCase();
+      final location = (e['location']?.toString() ?? '').toLowerCase();
+      final desc = (e['desc']?.toString() ?? '').toLowerCase();
+      final creator = (e['creator']?.toString() ?? '').toLowerCase();
+      final category = (e['category']?.toString() ?? '').toLowerCase();
+      final city = (e['city']?.toString() ?? '').toLowerCase();
+      matchSearch = title.contains(q) ||
+          location.contains(q) ||
+          desc.contains(q) ||
+          creator.contains(q) ||
+          category.contains(q) ||
+          city.contains(q);
+    }
+
+    return matchCategory && matchDate && matchCity && matchSearch;
   }).toList();
+}
+
+// 🎯 YENİ: 81 ili arayarak ya da kaydırarak seçtirten ortak şehir seçici (bottom sheet)
+Future<String?> _showCityPicker(BuildContext context, {String? initialCity}) {
+  return showModalBottomSheet<String>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    builder: (_) {
+      String query = '';
+      return StatefulBuilder(
+        builder: (context, setModalState) {
+          final filtered = _turkishCities
+              .where((c) => c.toLowerCase().contains(query.trim().toLowerCase()))
+              .toList();
+
+          return Container(
+            height: MediaQuery.of(context).size.height * 0.78,
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+            decoration: const BoxDecoration(
+              color: kCard,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: kTextSub.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  'ŞEHİR SEÇ',
+                  style: TextStyle(
+                    color: kText,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: kCardElevated,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: kBorder),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.search_rounded, size: 18, color: kTextSub),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TextField(
+                          style: const TextStyle(fontSize: 14, color: kText),
+                          decoration: InputDecoration.collapsed(
+                            hintText: 'İl ara... (ör. İstanbul)',
+                            hintStyle: TextStyle(color: kTextSub, fontSize: 14),
+                          ),
+                          onChanged: (v) => setModalState(() => query = v),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: filtered.isEmpty
+                      ? Center(
+                          child: Text(
+                            'Sonuç bulunamadı',
+                            style: TextStyle(color: kTextSub, fontSize: 13),
+                          ),
+                        )
+                      : ListView.separated(
+                          itemCount: filtered.length,
+                          separatorBuilder: (_, __) =>
+                              Divider(height: 1, color: kDivider),
+                          itemBuilder: (context, i) {
+                            final city = filtered[i];
+                            final selected = city == initialCity;
+                            return ListTile(
+                              title: Text(
+                                city,
+                                style: TextStyle(
+                                  color: selected ? kPrimary : kText,
+                                  fontWeight:
+                                      selected ? FontWeight.w800 : FontWeight.w500,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              trailing: selected
+                                  ? Icon(Icons.check_circle_rounded,
+                                      color: kPrimary, size: 18)
+                                  : null,
+                              onTap: () => Navigator.pop(context, city),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+    },
+  );
 }
 
 // ─── HOME SCREEN ──────────────────────────────────────────────────────────────
@@ -88,7 +245,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late Set<String> _myJoinedEventIds;
   Map<String, int> _joinedCounts = {};
 
- Future<void> _submitEvent() async {
+  // 🎯 YENİ: Etkinlik oluştururken seçilen şehir
+  String? _selectedCreateCity;
+
+Future<void> _submitEvent() async {
   if (_titleController.text.isEmpty || _locationController.text.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Lütfen etkinlik adı ve konum alanlarını doldurun!')),
@@ -96,9 +256,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return;
   }
 
+  // 🎯 EĞER TARİH SEÇİLMEDİYSE BUGÜNÜN TARİHİNİ DD/MM/YYYY FORMATINDA AYARLA
+  String eventDate = _dateController.text;
+  if (eventDate.isEmpty) {
+    final now = DateTime.now();
+    eventDate = "${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}";
+  }
+
   final Map<String, dynamic> eventData = {
     "title": _titleController.text,
     "location": _locationController.text,
+    "city": _selectedCreateCity ?? _selectedCity, // 🎯 YENİ: il bilgisi DB'ye gidiyor
+    "date": eventDate, // 🎯 DÜZELTME: Artık tarih verisi de DB'ye gidiyor
     "time": _timeController.text.isEmpty ? "Bugün" : _timeController.text,
     "max": int.tryParse(_maxPlayersController.text) ?? 10,
     "desc": _descController.text,
@@ -119,7 +288,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   };
     
   final response = await ApiService.createEvent(eventData, widget.userId);
-
   if (!mounted) return;
 
   if (response["success"] == true) {
@@ -140,6 +308,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _timeController.clear();
     _maxPlayersController.clear();
     _descController.clear();
+    setState(() {
+      _selectedCreateCity = null;
+    });
     
     _toggleCompose();
 
@@ -189,6 +360,25 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }  
 
+  // 🎯 YENİ: Üst bardaki şehir pilini açar, seçilince ana akışı filtreler
+  Future<void> _pickHomeCity() async {
+    final picked = await _showCityPicker(context, initialCity: _selectedCity);
+    if (picked != null) {
+      setState(() {
+        _selectedCity = picked;
+      });
+    }
+  }
+
+  // 🎯 YENİ: Etkinlik oluşturma formundaki şehir seçici
+  Future<void> _pickCreateCity() async {
+    final picked = await _showCityPicker(context, initialCity: _selectedCreateCity);
+    if (picked != null) {
+      setState(() {
+        _selectedCreateCity = picked == 'Tümü' ? null : picked;
+      });
+    }
+  }
 
   final _scrollController = ScrollController();
   bool _isComposeExpanded = false;
@@ -201,6 +391,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final _timeController = TextEditingController();
   final _maxPlayersController = TextEditingController();
   final _descController = TextEditingController();
+  final _searchController = TextEditingController(); // 🎯 YENİ: arama çubuğu controller'ı
 
   String _selectedCategoryLabel = 'Spor';
   String _selectedCategoryEmoji = '🏀';
@@ -233,6 +424,7 @@ Future<void> _loadEvents() async {
 void initState() {
   super.initState();
   _myJoinedEventIds = Set<String>.from(widget.initialJoinedEvents);
+  _selectedCreateCity = _selectedCity; // 🎯 YENİ: oluşturma formu varsayılan olarak seçili şehirle başlasın
   _loadEvents();
 
   _composeAnimCtrl = AnimationController(
@@ -256,6 +448,7 @@ void initState() {
     _timeController.dispose();
     _maxPlayersController.dispose();
     _descController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -299,13 +492,14 @@ void initState() {
             child: Column(
               children: [
                 _buildTopBar(),
+                _buildSearchBar(), // 🎯 YENİ: arama çubuğu
                 Expanded(
                   child: CustomScrollView(
                     controller: _scrollController,
                     physics: const BouncingScrollPhysics(),
                     slivers: [
                       SliverToBoxAdapter(child: _buildComposeBox()),
-                      // 🎯 DÜZELTME: Kategori satırı kaldırıldı (_buildCategoryRow() silindi)
+                      
                       SliverToBoxAdapter(child: _buildSectionHeader()),
                       SliverList(
                         delegate: SliverChildBuilderDelegate(
@@ -359,10 +553,84 @@ void initState() {
         children: [
           _PishtiLogo(),
           const Spacer(),
-          _LocationPill(),
-          const SizedBox(width: 10),
-          _NotifBell(),
+          _buildLocationPill(), // 🎯 DÜZELTME: bildirim zili kaldırıldı, sadece şehir pili kaldı
         ],
+      ),
+    );
+  }
+
+  // ── LOCATION PILL (81 il seçici) ────────────────────────────────────────────
+
+  Widget _buildLocationPill() {
+    return GestureDetector(
+      onTap: _pickHomeCity,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: kCard,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: kBorder),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8, offset: const Offset(0, 2)),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.location_on_rounded, size: 14, color: kPrimary),
+            const SizedBox(width: 4),
+            Text(
+              _selectedCity,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kText),
+            ),
+            const SizedBox(width: 2),
+            Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: kTextSub),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── SEARCH BAR ───────────────────────────────────────────────────────────────
+
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        decoration: BoxDecoration(
+          color: kCard,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: kBorder),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 10, offset: const Offset(0, 3)),
+          ],
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.search_rounded, size: 20, color: kTextSub),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: _searchController,
+                style: const TextStyle(fontSize: 14, color: kText),
+                decoration: InputDecoration.collapsed(
+                  hintText: 'Etkinlik, konum veya kategori ara...',
+                  hintStyle: TextStyle(color: kTextSub, fontSize: 14),
+                ),
+                onChanged: (v) => setState(() => _searchQuery = v),
+              ),
+            ),
+            if (_searchQuery.isNotEmpty)
+              GestureDetector(
+                onTap: () {
+                  _searchController.clear();
+                  setState(() => _searchQuery = '');
+                },
+                child: Icon(Icons.close_rounded, size: 18, color: kTextSub),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -508,7 +776,37 @@ void initState() {
           
           TextField(
             controller: _locationController,
-            decoration: const InputDecoration(hintText: '📍  Konum'),
+            decoration: const InputDecoration(hintText: '📍  Konum (ör. "Kapalı Spor Salonu")'),
+          ),
+          const SizedBox(height: 8),
+
+          // 🎯 YENİ: Şehir seçici (81 il, arayarak veya kaydırarak)
+          GestureDetector(
+            onTap: _pickCreateCity,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              decoration: BoxDecoration(
+                color: kCardElevated,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: kBorder),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.location_city_rounded, size: 16, color: kPrimary),
+                  const SizedBox(width: 8),
+                  Text(
+                    _selectedCreateCity ?? '🏙️  Şehir seç',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: _selectedCreateCity != null ? kText : kTextSub,
+                    ),
+                  ),
+                  const Spacer(),
+                  Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: kTextSub),
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 8),
           
@@ -814,7 +1112,8 @@ void initState() {
                 ),
               ),
               Text(
-                'Edirne · ${_filteredEvents.length} etkinlik',
+                // 🎯 DÜZELTME: sabit "Edirne" yerine seçili şehir gösteriliyor
+                '${_selectedCity == "Tümü" ? "Türkiye" : _selectedCity} · ${_filteredEvents.length} etkinlik',
                 style: TextStyle(fontSize: 12, color: kTextSub, fontWeight: FontWeight.w500),
               ),
             ],
@@ -1033,73 +1332,6 @@ class _PishtiLogoPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-// ─── LOCATION PILL ────────────────────────────────────────────────────────────
-
-class _LocationPill extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(
-        color: kCard,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: kBorder),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8, offset: const Offset(0, 2)),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.location_on_rounded, size: 14, color: kPrimary),
-          const SizedBox(width: 4),
-          const Text(
-            'Edirne',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: kText),
-          ),
-          const SizedBox(width: 2),
-          Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: kTextSub),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── NOTIF BELL ───────────────────────────────────────────────────────────────
-
-class _NotifBell extends StatelessWidget {
-  
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Container(
-          width: 42, height: 42,
-          decoration: BoxDecoration(
-            color: kCard,
-            shape: BoxShape.circle,
-            border: Border.all(color: kBorder),
-            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8, offset: const Offset(0, 2))],
-          ),
-          child: const Icon(Icons.notifications_outlined, size: 20, color: kText),
-        ),
-        Positioned(
-          top: -1, right: -1,
-          child: Container(
-            width: 11, height: 11,
-            decoration: BoxDecoration(
-              color: kPrimary,
-              shape: BoxShape.circle,
-              border: Border.all(color: kBg, width: 1.5),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 // ─── EVENT CARD ───────────────────────────────────────────────────────────────
 
 class _EventCard extends StatefulWidget {
@@ -1285,6 +1517,12 @@ void _toggleJoin(bool isFull) async {
     final int baseCommentCount = int.tryParse(e['comments'].toString()) ?? 0;
     final int totalComments = baseCommentCount + _comments.length;
 
+    // 🎯 YENİ: Etkinlik tarihi (ve varsa şehir) gösterimi için hazırlık
+    final String eventDateText = (e['date']?.toString().trim().isNotEmpty ?? false)
+        ? e['date'].toString()
+        : 'Tarih belirtilmedi';
+    final String eventCity = (e['city']?.toString().trim() ?? '');
+
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 6, 16, 6),
       decoration: BoxDecoration(
@@ -1372,11 +1610,35 @@ void _toggleJoin(bool isFull) async {
                 const SizedBox(width: 3),
                 Expanded(
                   child: Text(
-                    e['location'] as String,
+                    eventCity.isNotEmpty ? '${e['location']} · $eventCity' : e['location'] as String,
                     style: TextStyle(fontSize: 12, color: kTextSub, fontWeight: FontWeight.w500),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+              ],
+            ),
+          ),
+
+          // 🎯 YENİ: Etkinlik kartında tarih ve saat gösterimi
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+            child: Row(
+              children: [
+                Icon(Icons.calendar_today_rounded, size: 12, color: kTextSub),
+                const SizedBox(width: 4),
+                Text(
+                  eventDateText,
+                  style: TextStyle(fontSize: 12, color: kTextSub, fontWeight: FontWeight.w600),
+                ),
+                if ((e['time']?.toString().trim().isNotEmpty ?? false)) ...[
+                  const SizedBox(width: 10),
+                  Icon(Icons.access_time_rounded, size: 12, color: kTextSub),
+                  const SizedBox(width: 4),
+                  Text(
+                    e['time'].toString(),
+                    style: TextStyle(fontSize: 12, color: kTextSub, fontWeight: FontWeight.w600),
+                  ),
+                ],
               ],
             ),
           ),

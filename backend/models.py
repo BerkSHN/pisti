@@ -6,6 +6,7 @@ class Event(BaseModel):
     title: str
     location: str
     time: str
+    date: str 
     joined: int
     max: int
     category: str

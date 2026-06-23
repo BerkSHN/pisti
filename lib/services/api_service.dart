@@ -155,6 +155,47 @@ static Future<Map<String, dynamic>> createEvent(Map<String, dynamic> eventData, 
     };
   }
 }
+static Future<Map<String, dynamic>> updateProfile({
+  required String userId,
+  String? username,
+  String? email,
+  String? bio,
+  String? oldPassword,
+  String? newPassword,
+}) async {
+  try {
+    final response = await http.put(
+      Uri.parse('$baseUrl/users/$userId/update-profile'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        if (username != null) "username": username,
+        if (email != null) "email": email,
+        if (bio != null) "bio": bio,
+        if (oldPassword != null) "old_password": oldPassword,
+        if (newPassword != null) "new_password": newPassword,
+      }),
+    );
+
+    final data = jsonDecode(response.body);
+
+    if (response.statusCode == 200) {
+      return {
+        "success": true,
+        "user": data["user"],
+      };
+    }
+
+    return {
+      "success": false,
+      "message": data["detail"] ?? "Profil güncellenemedi",
+    };
+  } catch (e) {
+    return {
+      "success": false,
+      "message": "Bağlantı hatası: ${e.toString()}",
+    };
+  }
+}
 static Future<List<String>> getUserJoinedEvents(String userId) async {
   try {
     final response = await http.get(Uri.parse('$baseUrl/users/$userId'));
