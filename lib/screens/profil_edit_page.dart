@@ -1,5 +1,8 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart'; // 🎯 Paket eklendi
 import 'package:pisti_app/theme/app_colors.dart';
 import 'package:pisti_app/services/api_service.dart';
 
@@ -21,7 +24,8 @@ class _ProfileUpdateScreenState extends State<ProfileUpdateScreen> {
   bool _obscureOldPassword = true;
   bool _obscureNewPassword = true;
 
-  // 🎯 Backend Pydantic şemana (full_name ve username) birebir uyumlu controller'lar
+  String? _base64Image; // 🎯 Seçilen resmin base64 halini tutar
+
   final TextEditingController _fullNameController = TextEditingController();
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
@@ -48,18 +52,16 @@ class _ProfileUpdateScreenState extends State<ProfileUpdateScreen> {
 
   Future<void> _loadProfile() async {
     setState(() => _isLoading = true);
-
     try {
       final data = await ApiService.getUserProfileSummary(widget.userId);
-
       if (!mounted) return;
 
       setState(() {
-        // Backend'den gelen ham dataları alanlara dolduruyoruz
         _fullNameController.text = data?["full_name"] ?? data?["name"] ?? "";
         _usernameController.text = data?["username"] ?? "";
         _emailController.text = data?["email"] ?? "";
         _bioController.text = data?["bio"] ?? data?["biography"] ?? "";
+        _base64Image = data?["profile_image"]; // 🎯 Veritabanındaki resmi yükle
 
         _isLoading = false;
       });
@@ -67,6 +69,34 @@ class _ProfileUpdateScreenState extends State<ProfileUpdateScreen> {
       if (mounted) setState(() => _isLoading = false);
     }
   }
+
+Future<void> _pickImage() async {
+  try {
+    HapticFeedback.lightImpact();
+    final ImagePicker picker = ImagePicker();
+    
+    final XFile? image = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 50, 
+      maxWidth: 400,    
+      maxHeight: 400,
+    );
+
+    if (image == null) return;
+
+    // 🎯 Hatayı engellemek için doğrudan XFile üzerinden byte'ları okuyoruz:
+    final Uint8List imageBytes = await image.readAsBytes();
+    
+    setState(() {
+      // 🎯 dart:convert içerisindeki standart base64Encode'u çağırıyoruz
+      _base64Image = base64Encode(imageBytes); 
+    });
+
+    print("Resim başarıyla dönüştürüldü.");
+  } catch (e) {
+    print("Resim seçme hatası: $e");
+  }
+}
 
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
@@ -84,20 +114,16 @@ class _ProfileUpdateScreenState extends State<ProfileUpdateScreen> {
     setState(() => _isSaving = true);
 
     try {
-      final String? oldPassword = _oldPasswordController.text.trim().isNotEmpty 
-          ? _oldPasswordController.text.trim() 
-          : null;
-      final String? newPassword = _newPasswordController.text.trim().isNotEmpty 
-          ? _newPasswordController.text.trim() 
-          : null;
+      final String? oldPassword = _oldPasswordController.text.trim().isNotEmpty ? _oldPasswordController.text.trim() : null;
+      final String? newPassword = _newPasswordController.text.trim().isNotEmpty ? _newPasswordController.text.trim() : null;
 
-      // 🎯 NOT: ApiService.updateProfile metodun arka planda 'username' adında tek bir field parametresi 
-      // alıyorsa, backend'deki 'full_name'i de ezmek için buraya _fullNameController değerini gönderiyoruz.
       final result = await ApiService.updateProfile(
         userId: widget.userId,
-        username: _fullNameController.text.trim(), // Ön yüzde baskın olan full_name alanını günceller
+        fullName: _fullNameController.text.trim(),
+        username: _usernameController.text,
         email: _emailController.text.trim(),
         bio: _bioController.text.trim(),
+        profileImage: _base64Image, // 🎯 Yeni resmi apiye yolluyoruz
         oldPassword: oldPassword,
         newPassword: newPassword,
       );
@@ -112,12 +138,12 @@ class _ProfileUpdateScreenState extends State<ProfileUpdateScreen> {
           ),
         );
         
-        // 🎯 Ana ekrana dönerken full_name, username ve bio çakışmasını engellemek için map'i zorla güncelliyoruz
         final Map<String, dynamic> localUpdatedMap = {
           "full_name": _fullNameController.text.trim(),
           "username": _usernameController.text.trim(),
           "email": _emailController.text.trim(),
           "bio": _bioController.text.trim(),
+          "profile_image": _base64Image, // 🎯 Geri dönerken resmi de fırlatıyoruz
         };
 
         Navigator.pop(context, localUpdatedMap); 
@@ -151,19 +177,12 @@ class _ProfileUpdateScreenState extends State<ProfileUpdateScreen> {
         centerTitle: true,
         title: const Text(
           "PROFİLİ DÜZENLE",
-          style: TextStyle(
-            color: kText,
-            fontWeight: FontWeight.w900,
-            fontSize: 14,
-            letterSpacing: 2,
-          ),
+          style: TextStyle(color: kText, fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 2),
         ),
         iconTheme: const IconThemeData(color: kText),
       ),
       body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: kPrimary),
-            )
+          ? const Center(child: CircularProgressIndicator(color: kPrimary))
           : SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
@@ -174,106 +193,68 @@ class _ProfileUpdateScreenState extends State<ProfileUpdateScreen> {
                   children: [
                     Center(child: _buildAvatar()),
                     const SizedBox(height: 30),
-
-                    // 🎯 Ad Soyad Girişi (Backend'deki full_name alanını kontrol eder)
                     _buildInput(
                       controller: _fullNameController,
                       label: "Ad Soyad",
                       icon: Icons.badge_outlined,
                       validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return "Ad Soyad alanı boş bırakılamaz";
-                        }
-                        if (value.trim().length < 2) {
-                          return "Ad Soyad en az 2 karakter olmalıdır";
-                        }
+                        if (value == null || value.trim().isEmpty) return "Ad Soyad alanı boş bırakılamaz";
+                        if (value.trim().length < 2) return "Ad Soyad en az 2 karakter olmalıdır";
                         return null;
                       },
                     ),
                     const SizedBox(height: 18),
-
-                    // 🎯 Kullanıcı Adı Girişi (Backend'deki username alanını kontrol eder)
                     _buildInput(
                       controller: _usernameController,
                       label: "Kullanıcı Adı (Takma Ad)",
                       icon: Icons.person_outline_rounded,
                       validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return "Kullanıcı adı boş bırakılamaz";
-                        }
-                        if (value.trim().length < 3) {
-                          return "Kullanıcı adı en az 3 karakter olmalıdır";
-                        }
+                        if (value == null || value.trim().isEmpty) return "Kullanıcı adı boş bırakılamaz";
+                        if (value.trim().length < 3) return "Kullanıcı adı en az 3 karakter olmalıdır";
                         return null;
                       },
                     ),
                     const SizedBox(height: 18),
-
                     _buildInput(
                       controller: _emailController,
                       label: "E-posta Adresi",
                       icon: Icons.mail_outline_rounded,
                       keyboardType: TextInputType.emailAddress,
                       validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return "E-posta adresi boş olamaz";
-                        }
+                        if (value == null || value.trim().isEmpty) return "E-posta adresi boş olamaz";
                         return null;
                       },
                     ),
                     const SizedBox(height: 18),
-
-                    _buildInput(
-                      controller: _bioController,
-                      label: "Hakkımda (Bio)",
-                      icon: Icons.notes_rounded,
-                      maxLines: 3,
-                    ),
-                    
+                    _buildInput(controller: _bioController, label: "Hakkımda (Bio)", icon: Icons.notes_rounded, maxLines: 3),
                     const Padding(
                       padding: EdgeInsets.only(top: 28, bottom: 16, left: 4),
                       child: Text(
                         "GÜVENLİK VE ŞİFRE",
-                        style: TextStyle(
-                          color: kPrimary,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 12,
-                          letterSpacing: 1,
-                        ),
+                        style: TextStyle(color: kPrimary, fontWeight: FontWeight.w900, fontSize: 12, letterSpacing: 1),
                       ),
                     ),
-
                     _buildInput(
                       controller: _oldPasswordController,
                       label: "Mevcut Şifre",
                       icon: Icons.lock_outline_rounded,
                       obscureText: _obscureOldPassword,
                       suffixIcon: IconButton(
-                        icon: Icon(
-                          _obscureOldPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                          color: kTextSub,
-                          size: 20,
-                        ),
+                        icon: Icon(_obscureOldPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: kTextSub, size: 20),
                         onPressed: () => setState(() => _obscureOldPassword = !_obscureOldPassword),
                       ),
                     ),
                     const SizedBox(height: 18),
-
                     _buildInput(
                       controller: _newPasswordController,
                       label: "Yeni Şifre",
                       icon: Icons.lock_reset_rounded,
                       obscureText: _obscureNewPassword,
                       suffixIcon: IconButton(
-                        icon: Icon(
-                          _obscureNewPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                          color: kTextSub,
-                          size: 20,
-                        ),
+                        icon: Icon(_obscureNewPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: kTextSub, size: 20),
                         onPressed: () => setState(() => _obscureNewPassword = !_obscureNewPassword),
                       ),
                     ),
-
                     const SizedBox(height: 40),
                     _buildSaveButton(),
                     const SizedBox(height: 20),
@@ -285,58 +266,54 @@ class _ProfileUpdateScreenState extends State<ProfileUpdateScreen> {
   }
 
   Widget _buildAvatar() {
+    // Harfleri hesaplama
     String initials = "";
     if (_fullNameController.text.isNotEmpty) {
       final parts = _fullNameController.text.trim().split(" ");
       initials = parts.length > 1
           ? "${parts[0][0]}${parts[1][0]}"
           : _fullNameController.text.substring(0, _fullNameController.text.length >= 2 ? 2 : 1);
-    } else if (_usernameController.text.isNotEmpty) {
-      initials = _usernameController.text.substring(0, _usernameController.text.length >= 2 ? 2 : 1);
     }
 
     return Column(
       children: [
-        Container(
-          width: 110,
-          height: 110,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: const LinearGradient(
-              colors: [kPrimary, kPrimaryDark],
+        GestureDetector(
+          onTap: _pickImage, // Resme tıklayınca da galeri açılsın
+          child: Container(
+            width: 110,
+            height: 110,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: _base64Image == null ? const LinearGradient(colors: [kPrimary, kPrimaryDark]) : null,
+              color: _base64Image != null ? kCard : null,
+              boxShadow: [
+                BoxShadow(color: kPrimary.withValues(alpha: 0.2), blurRadius: 30, spreadRadius: 2),
+              ],
+              // 🎯 EĞER SEÇİLMİŞ RESİM VARSA CONTAINER İÇİNE BASIYORUZ
+              image: _base64Image != null
+                  ? DecorationImage(
+                      image: MemoryImage(base64Decode(_base64Image!)),
+                      fit: BoxFit.cover,
+                    )
+                  : null,
             ),
-            boxShadow: [
-              BoxShadow(
-                color: kPrimary.withValues(alpha: 0.2),
-                blurRadius: 30,
-                spreadRadius: 2,
-              ),
-            ],
-          ),
-          child: Center(
-            child: Text(
-              initials.toUpperCase(),
-              style: const TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w900,
-                color: Colors.white,
-              ),
-            ),
+            child: _base64Image == null
+                ? Center(
+                    child: Text(
+                      initials.toUpperCase(),
+                      style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Colors.white),
+                    ),
+                  )
+                : null,
           ),
         ),
         const SizedBox(height: 10),
         TextButton.icon(
-          onPressed: () {
-            HapticFeedback.lightImpact();
-          },
+          onPressed: _pickImage, // 🎯 Fonksiyon bağlandı
           icon: const Icon(Icons.camera_alt_outlined, size: 16, color: kPrimary),
           label: const Text(
             "Fotoğrafı Değiştir",
-            style: TextStyle(
-              color: kPrimary,
-              fontWeight: FontWeight.w800,
-              fontSize: 13,
-            ),
+            style: TextStyle(color: kPrimary, fontWeight: FontWeight.w800, fontSize: 13),
           ),
         )
       ],
@@ -358,14 +335,7 @@ class _ProfileUpdateScreenState extends State<ProfileUpdateScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 8),
-          child: Text(
-            label,
-            style: const TextStyle(
-              color: kText,
-              fontWeight: FontWeight.w800,
-              fontSize: 13,
-            ),
-          ),
+          child: Text(label, style: const TextStyle(color: kText, fontWeight: FontWeight.w800, fontSize: 13)),
         ),
         Container(
           decoration: BoxDecoration(
@@ -401,28 +371,14 @@ class _ProfileUpdateScreenState extends State<ProfileUpdateScreen> {
         style: ElevatedButton.styleFrom(
           backgroundColor: kPrimary,
           elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         ),
         onPressed: _isSaving ? null : _saveProfile,
         child: _isSaving
-            ? const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2.5,
-                ),
-              )
+            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
             : const Text(
                 "DEĞİŞİKLİKLERİ KAYDET",
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 15,
-                  color: Colors.white,
-                  letterSpacing: 0.5,
-                ),
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: Colors.white, letterSpacing: 0.5),
               ),
       ),
     );

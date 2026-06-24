@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import os
 from uuid import uuid4
-from typing import Optional
+from typing import Optional, List
 import bcrypt
 import jwt
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -11,7 +11,7 @@ from bson import ObjectId
 from pydantic import BaseModel
 
 from database import events_collection, revoked_tokens_collection, users_collection
-from models import Event, LoginRequest, RegisterRequest
+from models import Event, LoginRequest, RegisterRequest, UserUpdateModel
 
 app = FastAPI()
 
@@ -26,12 +26,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 class UpdateProfileRequest(BaseModel):
     username: Optional[str] = None
     email: Optional[str] = None
     bio: Optional[str] = None
     old_password: Optional[str] = None
     new_password: Optional[str] = None
+
 def event_serializer(event):
     return {
         "id": str(event["_id"]),
@@ -63,6 +65,8 @@ def user_serializer(user):
         "full_name": user["full_name"],
         "email": user["email"],
         "username": user["username"],
+        "bio": user.get("bio", ""), # 🎯 Serializer'a eklendi
+        "profile_image": user.get("profile_image", None), # 🎯 Serializer'a eklendi
         "joined_events": user.get("joined_events", [])
     }
 
@@ -123,6 +127,8 @@ async def register(request: RegisterRequest):
             "email": email,
             "username": username,
             "password_hash": password_hash,
+            "bio": "", # 🎯 Yeni kayıtlar varsayılan boş bio ile başlar
+            "profile_image": None, # 🎯 Yeni kayıtlar varsayılan fotoğrafsız başlar
             "created_at": datetime.now(timezone.utc),
         }
     )
@@ -191,25 +197,19 @@ async def create_event(event: Event, user_id: str):
         event_dict.setdefault("date", "")
         event_dict.setdefault("time", "")
         
-        # birleşik alan (çok önemli)
         event_dict["datetime"] = f"{event_dict['date']} {event_dict['time']}".strip()
         
-        # Etkinlik ilk başta kesinlikle 1 katılımcı (oluşturan kişi) ile başlasın
         event_dict["joined"] = 1 
         event_dict["owner_id"] = user_id
         
-        # 1. Etkinliği veritabanına kaydet
         result = await events_collection.insert_one(event_dict)
         event_id_str = str(result.inserted_id)
         
-        # 2. Kullanıcının katıldığı etkinlikler listesine BU etkinliğin string ID'sini ekle
-        # Burada modified_count kontrolü yapmadan doğrudan push/addToSet atıyoruz
         await users_collection.update_one(
             {"_id": ObjectId(user_id)},
             {"$addToSet": {"joined_events": event_id_str}}
         )
         
-        # 3. Güncel dökümanı bul ve sarmalayıcıdan (serializer) geçirerek dön
         created = await events_collection.find_one({"_id": result.inserted_id})
         return event_serializer(created)
         
@@ -219,36 +219,20 @@ async def create_event(event: Event, user_id: str):
 
 @app.get("/events")
 async def get_events():
-
     events = []
-
     async for event in events_collection.find():
-        events.append(
-            event_serializer(event)
-        )
-
+        events.append(event_serializer(event))
     return events
 
 @app.get("/events/{event_id}")
 async def get_event(event_id: str):
-
-    event = await events_collection.find_one(
-        {"_id": ObjectId(event_id)}
-    )
-
+    event = await events_collection.find_one({"_id": ObjectId(event_id)})
     if not event:
-        raise HTTPException(
-            status_code=404,
-            detail="Event not found"
-        )
-
+        raise HTTPException(status_code=404, detail="Event not found")
     return event_serializer(event)
 
 @app.put("/events/{event_id}")
-async def update_event(
-    event_id: str,
-    updated_event: Event
-):
+async def update_event(event_id: str, updated_event: Event):
     event_dict = updated_event.model_dump()
     event_dict.setdefault("date", "")
     event_dict.setdefault("time", "")
@@ -256,55 +240,35 @@ async def update_event(
     
     result = await events_collection.update_one(
         {"_id": ObjectId(event_id)},
-        {"$set": updated_event.model_dump()}
+        {"$set": event_dict}
     )
 
     if result.modified_count == 0:
-        raise HTTPException(
-            status_code=404,
-            detail="Event not found"
-        )
+        raise HTTPException(status_code=404, detail="Event not found")
 
-    event = await events_collection.find_one(
-        {"_id": ObjectId(event_id)}
-    )
-
+    event = await events_collection.find_one({"_id": ObjectId(event_id)})
     return event_serializer(event)
 
 @app.delete("/events/{event_id}")
 async def delete_event(event_id: str):
-
-    result = await events_collection.delete_one(
-        {"_id": ObjectId(event_id)}
-    )
-
+    result = await events_collection.delete_one({"_id": ObjectId(event_id)})
     if result.deleted_count == 0:
-        raise HTTPException(
-            status_code=404,
-            detail="Event not found"
-        )
-
-    return {
-        "message": "Event deleted successfully"
-    }
+        raise HTTPException(status_code=404, detail="Event not found")
+    return {"message": "Event deleted successfully"}
 
 @app.post("/join_event")
 async def join_event(request: JoinEventRequest):
     try:
         user_oid = ObjectId(request.user_id)
-        
-        # 1. Kullanıcının listesine etkinliği ekle
         user_result = await users_collection.update_one(
             {"_id": user_oid},
             {"$addToSet": {"joined_events": request.event_id}}
         )
         
-        # Eğer kullanıcı zaten katılmışsa (modified_count == 0), etkinlik sayacını boşuna artırma
         if user_result.modified_count > 0:
-            # 2. Etkinliğin joined sayısını veritabanında 1 ARTIR
             await events_collection.update_one(
                 {"_id": ObjectId(request.event_id)},
-                {"$inc": {"joined": 1}} # MongoDB'nin artırma operatörü
+                {"$inc": {"joined": 1}}
             )
             
         return {"success": True, "message": "Etkinliğe başarıyla katıldınız."}
@@ -316,16 +280,12 @@ async def join_event(request: JoinEventRequest):
 async def leave_event(request: JoinEventRequest):
     try:
         user_oid = ObjectId(request.user_id)
-        
-        # 1. Kullanıcının listesinden etkinliği sil
         user_result = await users_collection.update_one(
             {"_id": user_oid},
             {"$pull": {"joined_events": request.event_id}}
         )
         
-        # Eğer kullanıcı gerçekten listeden silindiyse sayacı azalt
         if user_result.modified_count > 0:
-            # 2. Etkinliğin joined sayısını veritabanında 1 AZALT
             await events_collection.update_one(
                 {"_id": ObjectId(request.event_id)},
                 {"$inc": {"joined": -1}}
@@ -342,13 +302,15 @@ async def get_user_profile(user_id: str):
         if not user:
             raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
         
-        # Kullanıcının sadece joined_events listesini dönmemiz yeterli
         return {
-        "full_name": user.get("full_name", "İsimsiz Kullanıcı"),
-        "username": user.get("username", ""),
-        "email": user.get("email", ""),
-        "joined_events": user.get("joined_events", [])
-    }
+            "id": str(user["_id"]),
+            "full_name": user.get("full_name", "İsimsiz Kullanıcı"),
+            "username": user.get("username", ""),
+            "email": user.get("email", ""),
+            "bio": user.get("bio", ""),              
+            "profile_image": user.get("profile_image", None),
+            "joined_events": user.get("joined_events", [])
+        }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -356,33 +318,72 @@ async def get_user_profile(user_id: str):
 @app.get("/users/{user_id}/joined_events_details")
 async def get_user_joined_events_details(user_id: str):
     try:
-        # 1. Kullanıcıyı bul
         user = await users_collection.find_one({"_id": ObjectId(user_id)})
         if not user:
             raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
         
-        # 2. Kullanıcının katıldığı etkinliklerin ID listesini al
         joined_ids = user.get("joined_events", [])
-        
-        # 3. Bu ID'lere sahip tüm etkinlikleri veritabanından sorgula
         object_ids = [ObjectId(eid) for eid in joined_ids if eid]
         events_cursor = events_collection.find({"_id": {"$in": object_ids}})
         events = await events_cursor.to_list(length=100)
         
-        # 4. Serileştirip listeyi dön (Varsayılan durum olarak hepsine 'Katıldın' basabiliriz)
         serialized_events = []
         for e in events:
             s_event = event_serializer(e)
-            s_event["status"] = "Katıldın" # Sayfa tasarımı için statü ekliyoruz
+            s_event["status"] = "Katıldın" 
             serialized_events.append(s_event)
             
         return serialized_events
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-# FastAPI (main.py veya ilgili router dosyası)
 
 @app.get("/users/{user_id}/created-events")
 async def get_user_created_events(user_id: str):
-    # 🎯 Şimdilik boş liste dönüyoruz ki Flutter 404 almasın, 
-    # ekran pürüzsüzce açılsın ve "Henüz bir etkinlik oluşturmadın" desin.
     return []
+
+
+@app.put("/users/{user_id}")
+async def update_profile(user_id: str, update_data: UserUpdateModel):
+    try:
+        user = await users_collection.find_one({"_id": ObjectId(user_id)})
+        if not user:
+            raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı")
+        
+        update_dict = {}
+        
+        if update_data.new_password:
+            if not update_data.old_password:
+                raise HTTPException(status_code=400, detail="Şifre değiştirmek için mevcut şifrenizi girmelisiniz.")
+            if not password_is_valid(update_data.old_password, user["password_hash"]):
+                raise HTTPException(status_code=400, detail="Mevcut şifreniz hatalı.")
+            update_dict["password_hash"] = bcrypt.hashpw(update_data.new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        
+        # 🎯 Otomatik eşleme kaldırıldı, gelen veriler doğrudan işleniyor:
+        if update_data.full_name is not None:
+            update_dict["full_name"] = update_data.full_name
+            
+        if update_data.username is not None:
+            # Kullanıcı adını temizleyip (küçük harf ve boşluksuz) kaydediyoruz
+            update_dict["username"] = update_data.username.strip().lower().replace(" ", "")
+            
+        if update_data.email is not None:
+            update_dict["email"] = update_data.email
+            
+        if update_data.bio is not None:
+            update_dict["bio"] = update_data.bio
+            
+        if update_data.profile_image is not None:
+            update_dict["profile_image"] = update_data.profile_image 
+
+        if update_dict:
+            await users_collection.update_one(
+                {"_id": ObjectId(user_id)},
+                {"$set": update_dict}
+            )
+            
+        return {"success": True, "message": "Profil başarıyla güncellendi ✨"}
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))

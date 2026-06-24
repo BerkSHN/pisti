@@ -1,3 +1,4 @@
+import 'dart:convert'; // 🎯 Base64 çözümü için eklendi
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pisti_app/screens/login_page.dart';
@@ -21,6 +22,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _username = "...";
   String _email = "...";
   String _bio = "Henüz bir biyografi eklenmemiş."; 
+  String? _profileImage; // 🎯 Base64 resim verisini tutacak değişken eklendi
 
   int _joinedCount = 0;
   String _score = "0";
@@ -51,6 +53,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
           _email = profileData["email"] ?? "";
           _bio = profileData["bio"] ?? "Henüz bir biyografi eklenmemiş."; 
+          _profileImage = profileData["profile_image"]; // 🎯 API'den gelen resim atandı
 
           if (profileData["joined_events"] != null) {
             _joinedCount = (profileData["joined_events"] as List).length;
@@ -297,14 +300,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         IconButton(
           icon: const Icon(Icons.settings_outlined, color: kTextSub),
           onPressed: () async {
-            // 🎯 Düzenleme ekranından dönen yeni 'user' nesnesini yakalıyoruz
             final dynamic updatedUserData = await Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (context) => ProfileUpdateScreen(userId: widget.userId),
               ),
             );
 
-            // 🎯 Eğer veri boş değilse ve Map yapısındaysa doğrudan ön yüzde state'i güncelliyoruz
             if (updatedUserData != null && updatedUserData is Map<String, dynamic>) {
               setState(() {
                 _username = updatedUserData["full_name"] ?? 
@@ -312,9 +313,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             updatedUserData["name"] ?? _username;
                 _email = updatedUserData["email"] ?? _email;
                 _bio = updatedUserData["bio"] ?? _bio;
+                _profileImage = updatedUserData["profile_image"] ?? _profileImage; // 🎯 Geri dönüş haritasından resmi güncelle
               });
             } else {
-              // Güvence altına almak için bir değişiklik algılandığında fallback yenileme tetikliyoruz
               _fetchFullProfileData();
             }
           },
@@ -324,6 +325,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildProfileInfo(String avatarText) {
+    // 🎯 Eğer resim varsa Base64 çözülerek gösteriliyor
+    final bool hasImage = _profileImage != null && _profileImage!.isNotEmpty;
+
     return Column(
       children: [
         const SizedBox(height: 10),
@@ -350,7 +354,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 backgroundColor: _isLoading ? kCard : kPrimary,
                 child: CircleAvatar(
                   radius: 47,
-                  backgroundColor: kBg,
+                  backgroundColor: hasImage ? Colors.transparent : kBg, // 🎯 Resim varken arka planı temizle
+                  backgroundImage: hasImage 
+                      ? MemoryImage(base64Decode(_profileImage!)) // 🎯 Base64 resmi render eder
+                      : null,
                   child: _isLoading
                       ? const SizedBox(
                           width: 22,
@@ -360,14 +367,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             valueColor: AlwaysStoppedAnimation<Color>(kTextSub),
                           ),
                         )
-                      : Text(
-                          avatarText,
-                          style: const TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.w900,
-                            color: kText,
-                          ),
-                        ),
+                      : (hasImage 
+                          ? null // 🎯 Resim varsa harfleri gizle
+                          : Text(
+                              avatarText,
+                              style: const TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.w900,
+                                color: kText,
+                              ),
+                            )),
                 ),
               ),
             ],

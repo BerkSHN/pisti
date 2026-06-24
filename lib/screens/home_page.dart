@@ -231,9 +231,10 @@ Future<String?> _showCityPicker(BuildContext context, {String? initialCity}) {
 class HomeScreen extends StatefulWidget {
   final String username;
   final String userId;
+  final String? userAvatar;
   final List<String> initialJoinedEvents;
 
-  const HomeScreen({super.key, required this.username, required this.userId, required this.initialJoinedEvents});
+  const HomeScreen({super.key, required this.username, this.userAvatar, required this.userId, required this.initialJoinedEvents});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -247,6 +248,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   // 🎯 YENİ: Etkinlik oluştururken seçilen şehir
   String? _selectedCreateCity;
+  String? _currentUserImage;
+  bool _isLoadingProfile = true;
+
+  Future<void> _loadCurrentUserProfile() async {
+    try {
+      final profileData = await ApiService.getUserProfileSummary(widget.userId);
+      if (profileData != null && mounted) {
+        setState(() {
+          _currentUserImage = profileData["profile_image"];
+          _isLoadingProfile = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Ana sayfa profil resmi yükleme hatası: $e");
+    }
+  }
 
 Future<void> _submitEvent() async {
   if (_titleController.text.isEmpty || _locationController.text.isEmpty) {
@@ -279,9 +296,11 @@ Future<void> _submitEvent() async {
     "comments": 0, 
     "shares": 0,
     "creator": widget.username,
-    "avatar": (widget.username.trim().isNotEmpty) 
-      ? widget.username.trim()[0].toUpperCase() 
-      : "U",
+    "avatar": (_currentUserImage != null && _currentUserImage!.isNotEmpty)
+    ? _currentUserImage 
+    : ((widget.username.trim().isNotEmpty)
+        ? widget.username.trim()[0].toUpperCase()
+        : "U"),
     "avatarColor": "#10B981",
     "tags": [_selectedCategoryLabel, "Yeni"],
     "imageUrl": null
@@ -426,6 +445,8 @@ void initState() {
   _myJoinedEventIds = Set<String>.from(widget.initialJoinedEvents);
   _selectedCreateCity = _selectedCity; // 🎯 YENİ: oluşturma formu varsayılan olarak seçili şehirle başlasın
   _loadEvents();
+
+  _loadCurrentUserProfile();
 
   _composeAnimCtrl = AnimationController(
     vsync: this,
@@ -678,15 +699,31 @@ void initState() {
                         ),
                       ],
                     ),
-                    child: const Center(
-                      child: Text('S',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 18,
-                        )),
-                    ),
-                  ),
+                    child: Center(
+child: (() {
+  if (_currentUserImage != null && _currentUserImage!.isNotEmpty) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: Image.memory(
+        base64Decode(_currentUserImage!),
+        width: 36,
+        height: 36,
+        fit: BoxFit.cover,
+      ),
+    );
+  } else {
+    return Center(
+      child: Text(
+        widget.username.trim().isNotEmpty ? widget.username.trim()[0].toUpperCase() : 'U',
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w800,
+          fontSize: 18,
+        ),
+      ),
+    );
+  }
+})(),),),
                   const SizedBox(width: 12),
                   Expanded(
                     child: GestureDetector(
@@ -1551,7 +1588,27 @@ void _toggleJoin(bool isFull) async {
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
             child: Row(
               children: [
-                _AvatarCircle(initials: e['avatar'] as String, color: avatarColor, size: 36),
+                (() {
+  final String? creatorAvatar = e['avatar']?.toString();
+  final bool hasCreatorImage = creatorAvatar != null && 
+                               creatorAvatar.isNotEmpty && 
+                               creatorAvatar.length > 20 && 
+                               !creatorAvatar.startsWith('http');
+
+  if (hasCreatorImage) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: Image.memory(
+        base64Decode(creatorAvatar),
+        width: 36,
+        height: 36,
+        fit: BoxFit.cover,
+      ),
+    );
+  } else {
+    return _AvatarCircle(initials: e['avatar'] as String, color: avatarColor, size: 36);
+  }
+})(),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
