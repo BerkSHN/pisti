@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 import os
 from uuid import uuid4
-
+from typing import Optional
 import bcrypt
 import jwt
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -26,7 +26,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+class UpdateProfileRequest(BaseModel):
+    username: Optional[str] = None
+    email: Optional[str] = None
+    bio: Optional[str] = None
+    old_password: Optional[str] = None
+    new_password: Optional[str] = None
 def event_serializer(event):
     return {
         "id": str(event["_id"]),
@@ -34,6 +39,8 @@ def event_serializer(event):
         "title": event["title"],
         "location": event["location"],
         "time": event["time"],
+        "city": event.get("city", "Edirne"), 
+        "date": event.get("date", ""),
         "joined": event["joined"],
         "max": event["max"],
         "category": event["category"],
@@ -180,6 +187,12 @@ async def logout(
 async def create_event(event: Event, user_id: str):
     try:
         event_dict = event.model_dump()
+
+        event_dict.setdefault("date", "")
+        event_dict.setdefault("time", "")
+        
+        # birleşik alan (çok önemli)
+        event_dict["datetime"] = f"{event_dict['date']} {event_dict['time']}".strip()
         
         # Etkinlik ilk başta kesinlikle 1 katılımcı (oluşturan kişi) ile başlasın
         event_dict["joined"] = 1 
@@ -236,7 +249,11 @@ async def update_event(
     event_id: str,
     updated_event: Event
 ):
-
+    event_dict = updated_event.model_dump()
+    event_dict.setdefault("date", "")
+    event_dict.setdefault("time", "")
+    event_dict["datetime"] = f"{event_dict['date']} {event_dict['time']}".strip()
+    
     result = await events_collection.update_one(
         {"_id": ObjectId(event_id)},
         {"$set": updated_event.model_dump()}
