@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:pisti_app/services/api_service.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:pisti_app/screens/user_profil_page.dart'; // 🎯 YENİ: Profil yönlendirmesi için (projenizdeki gerçek dosya yoluna göre düzenleyin)
 
 final _categories = [
   {'icon': '🏀', 'label': 'Spor'},
@@ -48,13 +49,16 @@ String _searchQuery = '';
 
 // 🎯 DÜZELTME: "DD/MM/YYYY" formatındaki event tarihini DateTime'a çeviren yardımcı fonksiyon
 DateTime? _parseEventDate(String? dateStr) {
-  if (dateStr == null || dateStr.isEmpty) return null;
-  final parts = dateStr.split('/');
+  if (dateStr == null || dateStr.trim().isEmpty) return null;
+  // Eğer gelen veri zaten bir DateTime objesiyse doğrudan döndür ya da String'e çevir
+  final cleanStr = dateStr.toString().trim();
+  final parts = cleanStr.split('/');
   if (parts.length != 3) return null;
   try {
-    final day = int.parse(parts[0]);
-    final month = int.parse(parts[1]);
-    final year = int.parse(parts[2]);
+    final day = int.tryParse(parts[0]);
+    final month = int.tryParse(parts[1]);
+    final year = int.tryParse(parts[2]);
+    if (day == null || month == null || year == null) return null;
     return DateTime(year, month, day);
   } catch (_) {
     return null;
@@ -62,30 +66,31 @@ DateTime? _parseEventDate(String? dateStr) {
 }
 
 List<Map<String, dynamic>> get _filteredEvents {
-  return _events.where((e) {
+  final filtered = _events.where((e) {
     final matchCategory = _selectedFilterCategory == null ||
         e['category'] == _selectedFilterCategory;
 
-    bool matchDate = true;
-    if (_selectedFilterDateStart != null && _selectedFilterDateEnd != null) {
-      final eventDate = _parseEventDate(e['date']?.toString());
-      if (eventDate != null) {
-        final startDay = DateTime(
-          _selectedFilterDateStart!.year,
-          _selectedFilterDateStart!.month,
-          _selectedFilterDateStart!.day,
-        );
-        final endDay = DateTime(
-          _selectedFilterDateEnd!.year,
-          _selectedFilterDateEnd!.month,
-          _selectedFilterDateEnd!.day,
-          23, 59, 59,
-        );
-        matchDate = !eventDate.isBefore(startDay) && !eventDate.isAfter(endDay);
-      } else {
-        matchDate = false;
-      }
-    }
+// _filteredEvents getter'ı içindeki ilgili matchDate bloğunu bununla değiştir:
+bool matchDate = true;
+if (_selectedFilterDateStart != null && _selectedFilterDateEnd != null) {
+  final eventDate = _parseEventDate(e['date']?.toString());
+  if (eventDate != null) {
+    final startDay = DateTime(
+      _selectedFilterDateStart!.year,
+      _selectedFilterDateStart!.month,
+      _selectedFilterDateStart!.day,
+    );
+    final endDay = DateTime(
+      _selectedFilterDateEnd!.year,
+      _selectedFilterDateEnd!.month,
+      _selectedFilterDateEnd!.day,
+      23, 59, 59,
+    );
+    matchDate = !eventDate.isBefore(startDay) && !eventDate.isAfter(endDay);
+  } else {
+    matchDate = false; // Tarihi çözülemeyen eventleri filtreleme esnasında gösterme
+  }
+}
 
     // 🎯 YENİ: Şehre göre filtrele (üst bardaki konum pili). "Tümü" ise filtre uygulanmaz.
     final matchCity = _selectedCity == 'Tümü' ||
@@ -112,6 +117,25 @@ List<Map<String, dynamic>> get _filteredEvents {
 
     return matchCategory && matchDate && matchCity && matchSearch;
   }).toList();
+
+  filtered.sort((a, b) {
+    final idA = (a['_id'] ?? a['id'] ?? '').toString();
+    final idB = (b['_id'] ?? b['id'] ?? '').toString();
+    return idB.compareTo(idA);
+  });
+
+  return filtered;
+}
+
+// 🎯 YENİ: Bir kullanıcının avatarına tıklanınca o kullanıcının profiline yönlendiren ortak fonksiyon
+void _goToUserProfile(BuildContext context, String? userId) {
+  if (userId == null || userId.isEmpty) return;
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => OtherUserProfileScreen(userId: userId),
+    ),
+  );
 }
 
 // 🎯 YENİ: 81 ili arayarak ya da kaydırarak seçtirten ortak şehir seçici (bottom sheet)
@@ -249,6 +273,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   // 🎯 YENİ: Etkinlik oluştururken seçilen şehir
   String? _selectedCreateCity;
+  // 🎯 YENİ: Etkinlik oluştururken seçilen fotoğraf (base64)
+  String? _selectedCreateImage;
   String? _currentUserImage;
   bool _isLoadingProfile = true;
 
@@ -284,8 +310,8 @@ Future<void> _submitEvent() async {
   final Map<String, dynamic> eventData = {
     "title": _titleController.text,
     "location": _locationController.text,
-    "city": _selectedCreateCity ?? _selectedCity, // 🎯 YENİ: il bilgisi DB'ye gidiyor
-    "date": eventDate, // 🎯 DÜZELTME: Artık tarih verisi de DB'ye gidiyor
+    "city": _selectedCreateCity ?? _selectedCity,
+    "date": eventDate,
     "time": _timeController.text.isEmpty ? "Bugün" : _timeController.text,
     "max": int.tryParse(_maxPlayersController.text) ?? 10,
     "desc": _descController.text,
@@ -305,7 +331,7 @@ Future<void> _submitEvent() async {
         : "U"),
     "avatarColor": "#10B981",
     "tags": [_selectedCategoryLabel, "Yeni"],
-    "imageUrl": null
+    "imageUrl": _selectedCreateImage
   };
     
   final response = await ApiService.createEvent(eventData, widget.userId);
@@ -331,6 +357,7 @@ Future<void> _submitEvent() async {
     _descController.clear();
     setState(() {
       _selectedCreateCity = null;
+      _selectedCreateImage = null;
     });
     
     _toggleCompose();
@@ -401,6 +428,39 @@ Future<void> _submitEvent() async {
     }
   }
 
+  // 🎯 YENİ: Etkinlik oluşturma formunda galeriden fotoğraf seçme
+  Future<void> _pickCreateEventImage() async {
+    final ImagePicker picker = ImagePicker();
+    try {
+      final XFile? image = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 50,
+      );
+
+      if (image == null) return;
+
+      final bytes = await image.readAsBytes();
+      final String base64Image = base64Encode(bytes);
+
+      if (!mounted) return;
+      setState(() {
+        _selectedCreateImage = base64Image;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Fotoğraf seçilirken bir hata oluştu.')),
+      );
+    }
+  }
+
+  // 🎯 YENİ: Seçilen fotoğrafı kaldır
+  void _removeCreateEventImage() {
+    setState(() {
+      _selectedCreateImage = null;
+    });
+  }
+
   final _scrollController = ScrollController();
   bool _isComposeExpanded = false;
   late AnimationController _composeAnimCtrl;
@@ -412,7 +472,7 @@ Future<void> _submitEvent() async {
   final _timeController = TextEditingController();
   final _maxPlayersController = TextEditingController();
   final _descController = TextEditingController();
-  final _searchController = TextEditingController(); // 🎯 YENİ: arama çubuğu controller'ı
+  final _searchController = TextEditingController();
 
   String _selectedCategoryLabel = 'Spor';
   String _selectedCategoryEmoji = '🏀';
@@ -445,7 +505,7 @@ Future<void> _loadEvents() async {
 void initState() {
   super.initState();
   _myJoinedEventIds = Set<String>.from(widget.initialJoinedEvents);
-  _selectedCreateCity = _selectedCity; // 🎯 YENİ: oluşturma formu varsayılan olarak seçili şehirle başlasın
+  _selectedCreateCity = _selectedCity;
   _loadEvents();
 
   _loadCurrentUserProfile();
@@ -500,7 +560,6 @@ void initState() {
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
-      // 🎯 DÜZELTME: Compose açıkken dışarıya tıklanınca kapanması için GestureDetector sarıldı
       child: GestureDetector(
         onTap: () {
           if (_isComposeExpanded) {
@@ -515,7 +574,7 @@ void initState() {
             child: Column(
               children: [
                 _buildTopBar(),
-                _buildSearchBar(), // 🎯 YENİ: arama çubuğu
+                _buildSearchBar(),
                 Expanded(
                   child: CustomScrollView(
                     controller: _scrollController,
@@ -541,6 +600,13 @@ void initState() {
                               currentJoined: currentCount,
                               currentUserImage: _currentUserImage,
                               currentUsername: widget.username,
+                              // 🎯 YENİ: Silme callback'i — sadece frontend listeden kaldırır
+                              onDeleteEvent: (eventId) {
+                                setState(() {
+                                  _events.removeWhere((e) =>
+                                      (e['_id'] ?? e['id']).toString() == eventId);
+                                });
+                              },
                               onJoinChanged: (joined) {
                                 _onJoinChanged(currentEventId, joined);
                                 setState(() {
@@ -578,7 +644,7 @@ void initState() {
         children: [
           _PishtiLogo(),
           const Spacer(),
-          _buildLocationPill(), // 🎯 DÜZELTME: bildirim zili kaldırıldı, sadece şehir pili kaldı
+          _buildLocationPill(),
         ],
       ),
     );
@@ -664,7 +730,6 @@ void initState() {
 
   Widget _buildComposeBox() {
     return GestureDetector(
-      // İç tıklamaların üst GestureDetector'a geçmesini engelle
       onTap: () {},
       child: Container(
         margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
@@ -781,7 +846,6 @@ child: (() {
               },
               child: _buildExpandedCompose(),
             ),
-            // 🎯 DÜZELTME: Alttaki "Paylaş" butonu kaldırıldı, sadece QuickChip'ler kaldı
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Row(
@@ -821,7 +885,6 @@ child: (() {
           ),
           const SizedBox(height: 8),
 
-          // 🎯 YENİ: Şehir seçici (81 il, arayarak veya kaydırarak)
           GestureDetector(
             onTap: _pickCreateCity,
             child: Container(
@@ -847,6 +910,57 @@ child: (() {
                   Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: kTextSub),
                 ],
               ),
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          GestureDetector(
+            onTap: _pickCreateEventImage,
+            child: Container(
+              width: double.infinity,
+              height: _selectedCreateImage != null ? 140 : 54,
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                color: kCardElevated,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: kBorder),
+              ),
+              child: _selectedCreateImage != null
+                  ? Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Image.memory(
+                          base64Decode(_selectedCreateImage!),
+                          fit: BoxFit.cover,
+                        ),
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: GestureDetector(
+                            onTap: _removeCreateEventImage,
+                            child: Container(
+                              padding: const EdgeInsets.all(5),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.55),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.close_rounded, size: 16, color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  : Row(
+                      children: [
+                        const SizedBox(width: 14),
+                        Icon(Icons.add_photo_alternate_outlined, size: 18, color: kPrimary),
+                        const SizedBox(width: 8),
+                        Text(
+                          '🖼️  Fotoğraf ekle (opsiyonel)',
+                          style: TextStyle(fontSize: 14, color: kTextSub),
+                        ),
+                      ],
+                    ),
             ),
           ),
           const SizedBox(height: 8),
@@ -1153,7 +1267,6 @@ child: (() {
                 ),
               ),
               Text(
-                // 🎯 DÜZELTME: sabit "Edirne" yerine seçili şehir gösteriliyor
                 '${_selectedCity == "Tümü" ? "Türkiye" : _selectedCity} · ${_filteredEvents.length} etkinlik',
                 style: TextStyle(fontSize: 12, color: kTextSub, fontWeight: FontWeight.w500),
               ),
@@ -1384,6 +1497,8 @@ class _EventCard extends StatefulWidget {
   final bool isAlreadyJoined;
   final String currentUsername;
   final String? currentUserImage;
+  // 🎯 YENİ: Silme callback'i
+  final ValueChanged<String> onDeleteEvent;
 
   const _EventCard({
     super.key,
@@ -1394,6 +1509,7 @@ class _EventCard extends StatefulWidget {
     required this.eventId,
     required this.isAlreadyJoined,
     required this.currentUsername,
+    required this.onDeleteEvent,
     this.currentUserImage,
   });
 
@@ -1410,25 +1526,37 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
   late Animation<double> _likeScale;
   late int _joinedCount;
 
-  // 🎯 YENİ: Yorum listesi ve yorum sayacı
   List<Map<String, dynamic>> _comments = [];
   bool _showComments = false;
   final _commentController = TextEditingController();
-  // 🎯 Sadece senin etkinliklerine fotoğraf eklemek için gerekli değişkenler
   String? _currentImageUrl;
   bool _isUploading = false;
 
-  Color _parseHexColor(String? hexString) {
-    if (hexString == null || hexString.isEmpty) {
-      return Colors.blue;
-    }
-    String cleanHex = hexString.replaceAll('#', '');
+bool get _isPastEvent {
+  final dateStr = widget.event['date']?.toString();
+  if (dateStr == null || dateStr.isEmpty) return false; // Eğer tarih yoksa geçmiş event sayma
+  final eventDate = _parseEventDate(dateStr);
+  if (eventDate == null) return false;
+  
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  return eventDate.isBefore(today);
+}
+
+Color _parseHexColor(String? hexString) {
+  if (hexString == null || hexString.trim().isEmpty) {
+    return const Color(0xFFFF6B00); // Default bir renk belirle
+  }
+  try {
+    String cleanHex = hexString.replaceAll('#', '').trim();
     if (cleanHex.length == 6) {
       cleanHex = 'FF' + cleanHex;
     }
     return Color(int.parse(cleanHex, radix: 16));
+  } catch (_) {
+    return const Color(0xFFFF6B00); // Hata durumunda çökmesin, default renk dönsün
   }
-
+}
   @override
   void initState() {
     super.initState();
@@ -1436,11 +1564,7 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
     _joinedCount = widget.currentJoined;
     _currentImageUrl = widget.event['imageUrl'] ?? widget.event['image_url'];
     final List<dynamic> likesList = widget.event['likes'] is List ? widget.event['likes'] : [];
-    
-    // Beğeni sayısı listenin uzunluğudur
     _likeCount = likesList.length;
-    
-    // Beğenip beğenmediğimiz kullanıcının ID'sinin listede olup olmamasına bağlıdır
     _liked = likesList.contains(widget.userId);
     if (widget.event['comments'] is List) {
       _comments = List<Map<String, dynamic>>.from(widget.event['comments']);
@@ -1453,45 +1577,6 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
       TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.4), weight: 50),
       TweenSequenceItem(tween: Tween(begin: 1.4, end: 1.0), weight: 50),
     ]).animate(CurvedAnimation(parent: _likeAnim, curve: Curves.easeInOut));
-  }
-
-  // 🎯 Galeriden fotoğraf seçip sunucuya gönderen fonksiyon
-  // 🎯 Güncellenmiş temiz fonksiyon: Galeriden fotoğraf seçip ApiService'e paslar
-  Future<void> _uploadEventPhoto() async {
-    final ImagePicker picker = ImagePicker();
-    try {
-      final XFile? image = await picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 50, // Sıkıştırma oranı
-      );
-
-      if (image == null) return;
-
-      setState(() => _isUploading = true);
-
-      final bytes = await image.readAsBytes();
-      final String base64Image = base64Encode(bytes);
-
-      // 🎯 İşte oluşturduğumuz ApiService bağlantısını burada çağırıyoruz:
-      final bool success = await ApiService.updateEventImage(widget.eventId, base64Image);
-
-      if (success) {
-        setState(() {
-          _currentImageUrl = base64Image;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Etkinlik fotoğrafı başarıyla güncellendi! ✨"), backgroundColor: kPrimary),
-        );
-      } else {
-        throw Exception();
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Fotoğraf yüklenirken bir hata oluştu."), backgroundColor: Colors.redAccent),
-      );
-    } finally {
-      setState(() => _isUploading = false);
-    }
   }
 
   @override
@@ -1523,7 +1608,6 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
       });
     }
 
-    // 🎯 DEĞİŞTİ: Yenileme sonrası gelen güncel likes listesine göre durumu eşitliyoruz
     if (widget.event['likes'] != oldWidget.event['likes']) {
       final List<dynamic> likesList = widget.event['likes'] is List ? widget.event['likes'] : [];
       setState(() {
@@ -1533,7 +1617,6 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
     }
     if (widget.event['creator'] != oldWidget.event['creator']) {
       setState(() {
-        // Kartın üst sınıftan gelen güncel veriyi okumasını garanti ediyoruz
         widget.event['creator'] = widget.event['creator'];
       });
   }
@@ -1551,24 +1634,19 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
 
   Future<void> _toggleLike() async {
     _likeAnim.forward(from: 0.0);
-    
-    // Optimistic UI: Kullanıcıya anlık tepki ver
     setState(() {
       _liked = !_liked;
       _likeCount += _liked ? 1 : -1;
     });
 
-    // API çağrısı
     final res = await ApiService.toggleLike(widget.eventId, widget.userId);
     
     if (res == null || res["success"] != true) {
-      // Hata varsa yerel işlemi geri al
       setState(() {
         _liked = !_liked;
         _likeCount += _liked ? 1 : -1;
       });
     } else {
-      // 🎯 Sunucudan dönen kesin len(likes) ve liked durumunu alıp eşitliyoruz
       setState(() {
         _likeCount = res["likes_count"] ?? _likeCount;
         _liked = res["liked"] ?? _liked;
@@ -1576,7 +1654,6 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
     }
   }
 
-  // 🎯 YENİ: Yorum bölümünü aç/kapat
   void _toggleComments() {
     setState(() {
       _showComments = !_showComments;
@@ -1584,7 +1661,6 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
     HapticFeedback.lightImpact();
   }
 
-  // 🎯 YENİ: Yorum gönder
   Future<void> _submitComment() async {
     final text = _commentController.text.trim();
     if (text.isEmpty) return;
@@ -1593,12 +1669,11 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
 
     final String currentLoggedUserAvatar = widget.currentUserImage ?? '';
 
-    // 🎯 widget.currentUserAvatar (veya sende hangi isimdeyse) parametresini ekledik
     final res = await ApiService.addComment(
       widget.eventId, 
       widget.userId, 
       widget.currentUsername, 
-      currentLoggedUserAvatar, // Giriş yapan kullanıcının güncel profil resmi değişkenini buraya veriyoruz
+      currentLoggedUserAvatar,
       text,
     );
     
@@ -1670,6 +1745,488 @@ void _toggleJoin(bool isFull) async {
     );
   }
 
+  // ── 🎯 YENİ: Etkinliği sil (sadece frontend) ──────────────────────────────
+  void _confirmDelete() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        decoration: const BoxDecoration(
+          color: kCard,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(color: kBorder, borderRadius: BorderRadius.circular(2)),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Etkinliği Sil',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: kText),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Bu etkinliği silmek istediğine emin misin?',
+              style: TextStyle(fontSize: 14, color: kTextSub),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: kCardElevated,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: kBorder),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'Vazgeç',
+                          style: TextStyle(fontWeight: FontWeight.w700, color: kText, fontSize: 14),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      Navigator.pop(context);
+                      widget.onDeleteEvent(widget.eventId.toString());
+                    },
+                    child: Container(
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'Sil',
+                          style: TextStyle(fontWeight: FontWeight.w800, color: Colors.red, fontSize: 14),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── 🎯 YENİ: Etkinliği düzenle (edit modal) ────────────────────────────────
+  void _openEditSheet() {
+    final e = widget.event;
+    final titleCtrl = TextEditingController(text: e['title']?.toString() ?? '');
+    final locationCtrl = TextEditingController(text: e['location']?.toString() ?? '');
+    final dateCtrl = TextEditingController(text: e['date']?.toString() ?? '');
+    final timeCtrl = TextEditingController(text: e['time']?.toString() ?? '');
+    final maxCtrl = TextEditingController(text: e['max']?.toString() ?? '');
+    final descCtrl = TextEditingController(text: e['desc']?.toString() ?? '');
+    String? editCity = e['city']?.toString();
+    String editCategoryLabel = e['category']?.toString() ?? 'Spor';
+    String editCategoryEmoji = e['emoji']?.toString() ?? '🏀';
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            Future<void> pickEditDate() async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: DateTime.now(),
+                firstDate: DateTime(2020),
+                lastDate: DateTime(2100),
+                locale: const Locale("tr", "TR"),
+              );
+              if (picked != null) {
+                setSheetState(() {
+                  dateCtrl.text =
+                      "${picked.day.toString().padLeft(2, '0')}/"
+                      "${picked.month.toString().padLeft(2, '0')}/"
+                      "${picked.year}";
+                });
+              }
+            }
+
+            Future<void> pickEditTime() async {
+              final picked = await showTimePicker(
+                context: context,
+                initialTime: TimeOfDay.now(),
+              );
+              if (picked != null) {
+                setSheetState(() {
+                  timeCtrl.text =
+                      "${picked.hour.toString().padLeft(2, '0')}:"
+                      "${picked.minute.toString().padLeft(2, '0')}";
+                });
+              }
+            }
+
+            Future<void> pickEditCity() async {
+              final picked = await _showCityPicker(context, initialCity: editCity);
+              if (picked != null) {
+                setSheetState(() {
+                  editCity = picked == 'Tümü' ? null : picked;
+                });
+              }
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Container(
+                height: MediaQuery.of(context).size.height * 0.88,
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                decoration: const BoxDecoration(
+                  color: kCard,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Drag handle
+                    Center(
+                      child: Container(
+                        width: 42, height: 5,
+                        decoration: BoxDecoration(
+                          color: kTextSub.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        const Text(
+                          'ETKİNLİĞİ DÜZENLE',
+                          style: TextStyle(
+                            color: kText,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                        const Spacer(),
+                        GestureDetector(
+                          onTap: () => Navigator.pop(context),
+                          child: Icon(Icons.close_rounded, color: kTextSub, size: 22),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          children: [
+                            // Etkinlik adı
+                            TextField(
+                              controller: titleCtrl,
+                              style: const TextStyle(fontSize: 14, color: kText),
+                              decoration: InputDecoration(
+                                hintText: '🎯  Etkinlik adı',
+                                hintStyle: TextStyle(color: kTextSub, fontSize: 14),
+                                filled: true,
+                                fillColor: kCardElevated,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: BorderSide(color: kBorder),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: BorderSide(color: kBorder),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: BorderSide(color: kPrimary),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            // Konum
+                            TextField(
+                              controller: locationCtrl,
+                              style: const TextStyle(fontSize: 14, color: kText),
+                              decoration: InputDecoration(
+                                hintText: '📍  Konum',
+                                hintStyle: TextStyle(color: kTextSub, fontSize: 14),
+                                filled: true,
+                                fillColor: kCardElevated,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: BorderSide(color: kBorder),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: BorderSide(color: kBorder),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: BorderSide(color: kPrimary),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            // Şehir seçici
+                            GestureDetector(
+                              onTap: pickEditCity,
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                                decoration: BoxDecoration(
+                                  color: kCardElevated,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: kBorder),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.location_city_rounded, size: 16, color: kPrimary),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      editCity ?? '🏙️  Şehir seç',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: editCity != null ? kText : kTextSub,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: kTextSub),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            // Tarih & Saat
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: pickEditDate,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                                      decoration: BoxDecoration(
+                                        color: kCardElevated,
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(color: kBorder),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.calendar_today_rounded, size: 14, color: kPrimary),
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: Text(
+                                              dateCtrl.text.isNotEmpty ? dateCtrl.text : '📅 Tarih',
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                color: dateCtrl.text.isNotEmpty ? kText : kTextSub,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: pickEditTime,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                                      decoration: BoxDecoration(
+                                        color: kCardElevated,
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(color: kBorder),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.access_time_rounded, size: 14, color: kPrimary),
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: Text(
+                                              timeCtrl.text.isNotEmpty ? timeCtrl.text : '🕐 Saat',
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                color: timeCtrl.text.isNotEmpty ? kText : kTextSub,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            // Maks. katılımcı
+                            TextField(
+                              controller: maxCtrl,
+                              keyboardType: TextInputType.number,
+                              style: const TextStyle(fontSize: 14, color: kText),
+                              decoration: InputDecoration(
+                                hintText: '👥  Maks. katılımcı sayısı',
+                                hintStyle: TextStyle(color: kTextSub, fontSize: 14),
+                                filled: true,
+                                fillColor: kCardElevated,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: BorderSide(color: kBorder),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: BorderSide(color: kBorder),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: BorderSide(color: kPrimary),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            // Açıklama
+                            Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: kCardElevated,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: kBorder),
+                              ),
+                              child: TextField(
+                                controller: descCtrl,
+                                maxLines: 3,
+                                style: const TextStyle(fontSize: 14, color: kText),
+                                decoration: InputDecoration.collapsed(
+                                  hintText: '✍️  Açıklama',
+                                  hintStyle: TextStyle(color: kTextSub, fontSize: 14),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            // Kategori seçici
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: _categories.map((c) {
+                                  final isSelected = editCategoryLabel == c['label'];
+                                  return Padding(
+                                    padding: const EdgeInsets.only(right: 6),
+                                    child: GestureDetector(
+                                      onTap: () => setSheetState(() {
+                                        editCategoryLabel = c['label'] as String;
+                                        editCategoryEmoji = c['icon'] as String;
+                                      }),
+                                      child: AnimatedContainer(
+                                        duration: const Duration(milliseconds: 180),
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                        decoration: BoxDecoration(
+                                          color: isSelected ? kPrimary : kCardElevated,
+                                          borderRadius: BorderRadius.circular(14),
+                                          border: Border.all(color: isSelected ? kPrimary : kBorder),
+                                        ),
+                                        child: Text(
+                                          '${c['icon']} ${c['label']}',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: isSelected ? Colors.white : kText,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                          ],
+                        ),
+                      ),
+                    ),
+                    // Kaydet butonu
+                    GestureDetector(
+                      onTap: () {
+                        // Kartı local olarak güncelle
+                        setState(() {
+                          widget.event['title'] = titleCtrl.text.trim().isNotEmpty
+                              ? titleCtrl.text.trim()
+                              : widget.event['title'];
+                          widget.event['location'] = locationCtrl.text.trim().isNotEmpty
+                              ? locationCtrl.text.trim()
+                              : widget.event['location'];
+                          if (editCity != null) widget.event['city'] = editCity;
+                          if (dateCtrl.text.isNotEmpty) widget.event['date'] = dateCtrl.text;
+                          if (timeCtrl.text.isNotEmpty) widget.event['time'] = timeCtrl.text;
+                          if (maxCtrl.text.isNotEmpty) widget.event['max'] = int.tryParse(maxCtrl.text) ?? widget.event['max'];
+                          if (descCtrl.text.trim().isNotEmpty) widget.event['desc'] = descCtrl.text.trim();
+                          widget.event['category'] = editCategoryLabel;
+                          widget.event['emoji'] = editCategoryEmoji;
+                        });
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Etkinlik güncellendi ✅')),
+                        );
+                      },
+                      child: Container(
+                        width: double.infinity,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [kPrimary, kPrimaryDark],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(18),
+                          boxShadow: [
+                            BoxShadow(
+                              color: kPrimary.withValues(alpha: 0.4),
+                              blurRadius: 14,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: const Center(
+                          child: Text(
+                            'Kaydet',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final e = widget.event;
@@ -1678,22 +2235,26 @@ void _toggleJoin(bool isFull) async {
     final pct = (joined / max).clamp(0.0, 1.0);
     final isFull = joined >= max;
     final tags = List<String>.from(e['tags'] ?? []); 
-    final bool isMyEvent = widget.event['creator'] == widget.currentUsername;
+    final bool isMyEvent = widget.event['owner_id'] == widget.userId;
+    final bool isPast = _isPastEvent;
 
     final catColor = _parseHexColor(e['categoryColor']?.toString()); 
     final avatarColor = _parseHexColor(e['avatarColor']?.toString());
 
-    // 🎯 YENİ: Toplam yorum sayısı (backend'den gelen + yerel eklenen)
     final int baseCommentCount = int.tryParse(e['comments'].toString()) ?? 0;
     final int totalComments = baseCommentCount + _comments.length;
 
-    // 🎯 YENİ: Etkinlik tarihi (ve varsa şehir) gösterimi için hazırlık
     final String eventDateText = (e['date']?.toString().trim().isNotEmpty ?? false)
         ? e['date'].toString()
         : 'Tarih belirtilmedi';
     final String eventCity = (e['city']?.toString().trim() ?? '');
 
-    return Container(
+    // 🎯 YENİ: Etkinliği oluşturan kullanıcının owner_id'si
+    final String creatorOwnerId = (e['owner_id'] ?? '').toString();
+
+    return Opacity(
+      opacity: isPast ? 0.5 : 1.0,
+      child: Container(
       margin: const EdgeInsets.fromLTRB(16, 6, 16, 6),
       decoration: BoxDecoration(
         color: kCard,
@@ -1721,27 +2282,31 @@ void _toggleJoin(bool isFull) async {
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
             child: Row(
               children: [
-                (() {
-  final String? creatorAvatar = e['avatar']?.toString();
-  final bool hasCreatorImage = creatorAvatar != null && 
-                               creatorAvatar.isNotEmpty && 
-                               creatorAvatar.length > 20 && 
-                               !creatorAvatar.startsWith('http');
+                // 🎯 YENİ: Avatar tıklanınca o kullanıcının profiline yönlendir
+                GestureDetector(
+                  onTap: () => _goToUserProfile(context, creatorOwnerId),
+                  child: (() {
+                    final String? creatorAvatar = e['avatar']?.toString();
+                    final bool hasCreatorImage = creatorAvatar != null && 
+                                                 creatorAvatar.isNotEmpty && 
+                                                 creatorAvatar.length > 20 && 
+                                                 !creatorAvatar.startsWith('http');
 
-  if (hasCreatorImage) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(18),
-      child: Image.memory(
-        base64Decode(creatorAvatar),
-        width: 36,
-        height: 36,
-        fit: BoxFit.cover,
-      ),
-    );
-  } else {
-    return _AvatarCircle(initials: e['avatar'] as String, color: avatarColor, size: 36);
-  }
-})(),
+                    if (hasCreatorImage) {
+                      return ClipRRect(
+                        borderRadius: BorderRadius.circular(18),
+                        child: Image.memory(
+                          base64Decode(creatorAvatar),
+                          width: 36,
+                          height: 36,
+                          fit: BoxFit.cover,
+                        ),
+                      );
+                    } else {
+                      return _AvatarCircle(initials: e['avatar'] as String, color: avatarColor, size: 36);
+                    }
+                  })(),
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -1810,7 +2375,6 @@ void _toggleJoin(bool isFull) async {
             ),
           ),
 
-          // 🎯 YENİ: Etkinlik kartında tarih ve saat gösterimi
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
             child: Row(
@@ -1834,8 +2398,6 @@ void _toggleJoin(bool isFull) async {
             ),
           ),
           
-          
-          
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
             child: Text(
@@ -1845,7 +2407,6 @@ void _toggleJoin(bool isFull) async {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-
 
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
@@ -1933,7 +2494,6 @@ void _toggleJoin(bool isFull) async {
             padding: const EdgeInsets.fromLTRB(12, 10, 16, 14),
             child: Row(
               children: [
-                // 🎯 DÜZELTME: Beğeni butonu çalışır hale getirildi
                 GestureDetector(
                   onTap: _toggleLike,
                   child: ScaleTransition(
@@ -1946,7 +2506,6 @@ void _toggleJoin(bool isFull) async {
                   ),
                 ),
                 const SizedBox(width: 4),
-                // 🎯 DÜZELTME: Yorum butonu tıklanınca yorum bölümünü açıyor
                 GestureDetector(
                   onTap: _toggleComments,
                   child: _ActionBtn(
@@ -1958,7 +2517,6 @@ void _toggleJoin(bool isFull) async {
                   ),
                 ),
                 const SizedBox(width: 4),
-                // 🎯 DÜZELTME: Paylaş butonu çalışır hale getirildi
                 GestureDetector(
                   onTap: _shareEvent,
                   child: _ActionBtn(
@@ -1970,29 +2528,35 @@ void _toggleJoin(bool isFull) async {
                 const Spacer(),
                 // JOIN button
                 GestureDetector(
-                  onTap: () => _toggleJoin(isFull),
+                  onTap: isPast ? null : () => _toggleJoin(isFull),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 250),
                     curve: Curves.easeInOut,
                     padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 11),
                     decoration: BoxDecoration(
-                      gradient: _joined
+                      gradient: isPast
                           ? null
-                          : (isFull
+                          : (_joined
                               ? null
-                              : const LinearGradient(
-                                  colors: [kPrimary, kPrimaryDark],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                )),
-                      color: _joined
-                          ? kMint.withValues(alpha: 0.12)
-                          : (isFull ? kCardElevated : null),
+                              : (isFull
+                                  ? null
+                                  : const LinearGradient(
+                                      colors: [kPrimary, kPrimaryDark],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ))),
+                      color: isPast
+                          ? kCardElevated
+                          : (_joined
+                              ? kMint.withValues(alpha: 0.12)
+                              : (isFull ? kCardElevated : null)),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: _joined ? kMint : (isFull ? kBorder : Colors.transparent),
+                        color: isPast
+                            ? kBorder
+                            : (_joined ? kMint : (isFull ? kBorder : Colors.transparent)),
                       ),
-                      boxShadow: _joined || isFull
+                      boxShadow: (isPast || _joined || isFull)
                           ? []
                           : [
                               BoxShadow(
@@ -2005,17 +2569,21 @@ void _toggleJoin(bool isFull) async {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (_joined) ...[
+                        if (!isPast && _joined) ...[
                           Icon(Icons.check_circle_rounded, size: 15, color: kMint),
                           const SizedBox(width: 5),
                         ],
                         AnimatedSwitcher(
                           duration: const Duration(milliseconds: 200),
                           child: Text(
-                            _joined ? 'Katıldın' : (isFull ? 'Dolu' : 'Katıl'),
-                            key: ValueKey(_joined ? 'joined' : (isFull ? 'full' : 'join')),
+                            isPast
+                                ? 'Sona Erdi'
+                                : (_joined ? 'Katıldın' : (isFull ? 'Dolu' : 'Katıl')),
+                            key: ValueKey(isPast ? 'past' : (_joined ? 'joined' : (isFull ? 'full' : 'join'))),
                             style: TextStyle(
-                              color: _joined ? kMint : (isFull ? kTextSub : Colors.white),
+                              color: isPast
+                                  ? kTextSub
+                                  : (_joined ? kMint : (isFull ? kTextSub : Colors.white)),
                               fontWeight: FontWeight.w800,
                               fontSize: 14,
                             ),
@@ -2039,10 +2607,10 @@ void _toggleJoin(bool isFull) async {
           ),
         ],
       ),
+      ),
     );
   }
 
-  // 🎯 YENİ: Yorum bölümü widget'ı
   Widget _buildCommentsSection() {
     return Container(
       decoration: BoxDecoration(
@@ -2054,7 +2622,6 @@ void _toggleJoin(bool isFull) async {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Mevcut yorumlar
           if (_comments.isEmpty)
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
@@ -2068,7 +2635,6 @@ void _toggleJoin(bool isFull) async {
 
           const SizedBox(height: 10),
 
-          // Yorum yazma alanı
           Row(
             children: [
               Expanded(
@@ -2120,14 +2686,10 @@ void _toggleJoin(bool isFull) async {
     );
   }
 
-  // 🎯 YENİ: Tek yorum satırı widget'ı
-  // 🎯 GÜNCELLENDİ: MongoDB'den gelen username ve created_at alanlarına göre uyarlandı
   Widget _buildCommentItem(Map<String, dynamic> comment) {
     final String commentAuthor = (comment['username'] ?? comment['author'] ?? 'Anonim').toString();
     final String commentTime = (comment['created_at'] ?? comment['time'] ?? 'Şimdi').toString();
     final String commentText = (comment['text'] ?? '').toString();
-    
-    // 🎯 YENİ: Yorumun içinden gelen profil resmini okuyoruz
     final String? commentAvatar = comment['avatar'] as String?;
 
     return Padding(
@@ -2135,7 +2697,6 @@ void _toggleJoin(bool isFull) async {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 🎯 PROFİL FOTOĞRAFI ALANI GÜNCELLENDİ
           Container(
             width: 32, height: 32,
             decoration: BoxDecoration(
@@ -2144,7 +2705,6 @@ void _toggleJoin(bool isFull) async {
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(16),
-              // Eğer yorumu atan kişinin fotoğrafı varsa base64 resmi çözüp basıyoruz
               child: commentAvatar != null && commentAvatar.length > 5
                   ? Image.memory(
                       base64Decode(commentAvatar),
@@ -2157,7 +2717,6 @@ void _toggleJoin(bool isFull) async {
                         ),
                       ),
                     )
-                  // Eğer profil fotoğrafı yoksa eski harfli sistem devreye giriyor
                   : Center(
                       child: Text(
                         commentAuthor.isNotEmpty ? commentAuthor[0].toUpperCase() : 'A',
@@ -2206,110 +2765,131 @@ void _toggleJoin(bool isFull) async {
   }
 
   Widget _buildImageArea(Map<String, dynamic> e, Color catColor) {
-  // 🎯 Giriş yapan kişi ile bu etkinliği oluşturan kişi aynı mı kontrolü
-  // creator alanında username saklandığı için doğrudan widget'taki değerle kıyaslıyoruz
-  bool isMyEvent = widget.event['owner_id'] == widget.userId;
+    bool isMyEvent = widget.event['owner_id'] == widget.userId;
 
-  return Stack(
-    children: [
-      Container(
-        height: 160,
-        width: double.infinity,
-        decoration: const BoxDecoration(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: ClipRRect(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          // 🎯 7. ADIM ENTEGRASYONU: Eğer fotoğraf yüklenmişse base64 resmi göster, yoksa eski emojili tasarımı koru
-          child: _currentImageUrl != null && _currentImageUrl!.isNotEmpty
-              ? Image.memory(
-                  base64Decode(_currentImageUrl!),
-                  width: double.infinity,
-                  height: 160,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => const SizedBox(),
-                )
-              : Stack(
-                  children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            catColor.withValues(alpha: 0.3),
-                            kCard,
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      right: -20, top: -20,
-                      child: Container(
-                        width: 120, height: 120,
+    return Stack(
+      children: [
+        Container(
+          height: 160,
+          width: double.infinity,
+          decoration: const BoxDecoration(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            child: _currentImageUrl != null && _currentImageUrl!.isNotEmpty
+                ? Image.memory(
+                    base64Decode(_currentImageUrl!),
+                    width: double.infinity,
+                    height: 160,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => const SizedBox(),
+                  )
+                : Stack(
+                    children: [
+                      Container(
                         decoration: BoxDecoration(
-                          color: catColor.withValues(alpha: 0.15),
-                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            colors: [
+                              catColor.withValues(alpha: 0.3),
+                              kCard,
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
                         ),
                       ),
-                    ),
-                    Positioned(
-                      left: -30, bottom: -30,
-                      child: Container(
-                        width: 100, height: 100,
-                        decoration: BoxDecoration(
-                          color: catColor.withValues(alpha: 0.10),
-                          shape: BoxShape.circle,
+                      Positioned(
+                        right: -20, top: -20,
+                        child: Container(
+                          width: 120, height: 120,
+                          decoration: BoxDecoration(
+                            color: catColor.withValues(alpha: 0.15),
+                            shape: BoxShape.circle,
+                          ),
                         ),
                       ),
-                    ),
-                    Center(
-                      child: Text(
-                        e['emoji'] as String,
-                        style: const TextStyle(fontSize: 64),
+                      Positioned(
+                        left: -30, bottom: -30,
+                        child: Container(
+                          width: 100, height: 100,
+                          decoration: BoxDecoration(
+                            color: catColor.withValues(alpha: 0.10),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-        ),
-      ),
-      
-      // 🎯 6. ADIM ENTEGRASYONU: Fotoğraf butonunu sadece kendi paylaştığımız etkinliklerde göster
-      if (isMyEvent)
-        Positioned(
-          top: 10, right: 10,
-          child: GestureDetector(
-            onTap: _isUploading ? null : _uploadEventPhoto, // Tıklanınca fotoğraf yükleme fonksiyonunu çağırır
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: kCard.withValues(alpha: 0.9),
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 6)],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _isUploading
-                      ? SizedBox(
-                          width: 12,
-                          height: 12,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: catColor),
-                        )
-                      : Icon(Icons.add_photo_alternate_outlined, size: 14, color: catColor),
-                  const SizedBox(width: 4),
-                  Text(
-                    _isUploading ? 'Yükleniyor...' : 'Fotoğraf',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: catColor),
+                      Center(
+                        child: Text(
+                          e['emoji'] as String,
+                          style: const TextStyle(fontSize: 64),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ),
           ),
         ),
-    ],
-  );
-}
+
+        // 🎯 YENİ: Kendi etkinliğimizde üst sağda Edit + Sil butonları
+        if (isMyEvent && !_isPastEvent)
+          Positioned(
+            top: 10, right: 10,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // ✏️ Düzenle butonu
+                GestureDetector(
+                  onTap: _openEditSheet,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: kCard.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 6)],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.edit_rounded, size: 14, color: catColor),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Düzenle',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: catColor),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                // 🗑️ Sil butonu
+                GestureDetector(
+                  onTap: _confirmDelete,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: kCard.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 6)],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.delete_outline_rounded, size: 14, color: Colors.red),
+                        const SizedBox(width: 4),
+                        const Text(
+                          'Sil',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.red),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
 }
 
 // ─── SHARE SHEET ──────────────────────────────────────────────────────────────

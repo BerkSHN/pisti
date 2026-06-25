@@ -278,11 +278,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ],
                   ),
 
-                  const SizedBox(height: 24),
 
-                  _socialButton(icon: "G", title: "Google ile devam et"),
-
-                  const SizedBox(height: 35),
 
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
