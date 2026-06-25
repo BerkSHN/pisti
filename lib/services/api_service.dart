@@ -258,4 +258,88 @@ static Future<Map<String, dynamic>> updateProfile({
       return [];
     }
   }
+  static Future<bool> updateMyEventsProfile({
+  required String userId,
+  required String newUsername,
+  required String? newAvatar,
+}) async {
+  try {
+    final response = await http.put(
+      Uri.parse('$baseUrl/events/update-creator/$userId'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'creator': newUsername,
+        'avatar': newAvatar,
+      }),
+    );
+    return response.statusCode == 200;
+  } catch (e) {
+    print("Etkinlik profil güncelleme hatası: $e");
+    return false;
+  }
+}
+static Future<bool> updateEventImage(String eventId, String base64Image) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$baseUrl/events/update-image/$eventId'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'imageUrl': base64Image,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data["success"] == true;
+      }
+      return false;
+    } catch (e) {
+      print("updateEventImage Hatası: $e");
+      return false;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> addComment(String eventId, String userId, String username, String avatar, String text) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/events/$eventId/comment'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'user_id': userId,
+          'username': username,
+          'avatar': avatar, // 🎯 Giriş yapan kullanıcının profil resmi gidiyor
+          'text': text,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      return null;
+    } catch (e) {
+      print("addComment Hatası: $e");
+      return null;
+    }
+  }
+
+  // 🎯 YENİ: Beğenme durumunu tersine çevirme (Like/Unlike) fonksiyonu
+  static Future<Map<String, dynamic>?> toggleLike(String eventId, String userId) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/events/$eventId/toggle-like'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'user_id': userId,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      return null;
+    } catch (e) {
+      print("toggleLike Hatası: $e");
+      return null;
+    }
+  }
 }

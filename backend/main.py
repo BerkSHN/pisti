@@ -27,6 +27,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class CommentCreate(BaseModel):
+    user_id: str
+    username: str
+    text: str
+    avatar: Optional[str] = None
+
+class LikeToggle(BaseModel):
+    user_id: str
+
+class EventImageUpdate(BaseModel):
+    imageUrl: str
+
 class UpdateProfileRequest(BaseModel):
     username: Optional[str] = None
     email: Optional[str] = None
@@ -47,6 +59,7 @@ def event_serializer(event):
         "max": event["max"],
         "category": event["category"],
         "creator": event["creator"],
+        "owner_id": event["owner_id"],
         "avatar": event["avatar"],
         "avatarColor": event["avatarColor"],
         "desc": event["desc"],
@@ -358,12 +371,10 @@ async def update_profile(user_id: str, update_data: UserUpdateModel):
                 raise HTTPException(status_code=400, detail="Mevcut şifreniz hatalı.")
             update_dict["password_hash"] = bcrypt.hashpw(update_data.new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
         
-        # 🎯 Otomatik eşleme kaldırıldı, gelen veriler doğrudan işleniyor:
         if update_data.full_name is not None:
             update_dict["full_name"] = update_data.full_name
             
         if update_data.username is not None:
-            # Kullanıcı adını temizleyip (küçük harf ve boşluksuz) kaydediyoruz
             update_dict["username"] = update_data.username.strip().lower().replace(" ", "")
             
         if update_data.email is not None:
@@ -376,14 +387,141 @@ async def update_profile(user_id: str, update_data: UserUpdateModel):
             update_dict["profile_image"] = update_data.profile_image 
 
         if update_dict:
+            # 1. Önce kullanıcının kendi profil bilgilerini veritabanında güncelliyoruz
             await users_collection.update_one(
                 {"_id": ObjectId(user_id)},
                 {"$set": update_dict}
             )
             
+            # 2. 🎯 YENİ KONTROL: Geçmiş yorumları otomatik senkronize etme alanı
+            # Eğer güncellenen bilgiler arasında kullanıcı adı veya profil fotoğrafı varsa devreye giriyor
+            if "username" in update_dict or "profile_image" in update_dict:
+                # Eğer kullanıcı o esnada değiştirmediyse, veritabanındaki mevcut (eski) değerini koru diyoruz:
+                current_username = update_dict.get("username", user.get("username"))
+                current_avatar = update_dict.get("profile_image", user.get("profile_image"))
+                
+                # Tek bir update_many sorgusuyla tüm etkinliklerdeki yorumları güncelliyoruz:
+                await events_collection.update_many(
+                    {"comments.user_id": str(user_id)}, # Bu kullanıcının yorum yaptığı etkinlikleri bul
+                    {
+                        "$set": {
+                            "comments.$[elem].username": current_username, # İsmini taze değerle değiştir
+                            "comments.$[elem].avatar": current_avatar       # Fotosunu taze değerle değiştir
+                        }
+                    },
+                    array_filters=[{"elem.user_id": str(user_id)}] # Sadece bu kullanıcının yorum kutularını hedef al
+                )
+            
         return {"success": True, "message": "Profil başarıyla güncellendi ✨"}
         
     except HTTPException as he:
         raise he
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+@app.put("/events/update-creator/{user_id}")
+async def update_event_creator(user_id: str, payload: dict):
+    try:
+        creator_name = payload.get("creator")
+        avatar_image = payload.get("avatar")
+        
+        if not creator_name:
+            raise HTTPException(status_code=400, detail="Kullanıcı adı alanı zorunludur.")
+            
+        # MongoDB'de owner_id'si (veya etkinliklerde tuttuğun yapıya göre userId) 
+        # bu user_id olan tüm etkinlik dokümanlarını bulup toplu güncelliyoruz.
+        # Not: create_event fonksiyonunda 'owner_id' olarak kaydettiğin için sorguyu 'owner_id' ye göre yapıyoruz.
+        result = await events_collection.update_many(
+            {"owner_id": user_id},
+            {"$set": {
+                "creator": creator_name,
+                "avatar": avatar_image
+            }}
+        )
+        
+        return {
+            "success": True, 
+            "message": f"{result.modified_count} etkinlik başarıyla güncellendi."
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+@app.put("/events/update-image/{event_id}")
+async def update_event_image(event_id: str, data: EventImageUpdate):
+    try:
+        # 🎯 Senin veritabanı yapına uygun olarak events_collection kullanıyoruz:
+        result = await events_collection.update_one(
+            {"_id": ObjectId(event_id)},
+            {"$set": {"imageUrl": data.imageUrl}}
+        )
+
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Etkinlik bulunamadı")
+
+        return {"success": True, "message": "Etkinlik fotoğrafı başarıyla güncellendi"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/events/{event_id}/comment")
+async def add_comment(event_id: str, data: CommentCreate):
+    try:
+        comment_data = {
+            "user_id": str(data.user_id),
+            "username": data.username,
+            "text": data.text,
+            "avatar": data.avatar, # 🎯 YENİ: Profil resmini de yorumun içine kaydediyoruz
+            "created_at": datetime.utcnow().isoformat()
+        }
+        
+        result = await events_collection.update_one(
+            {"_id": ObjectId(event_id)},
+            {"$push": {"comments": comment_data}}
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Etkinlik bulunamadı")
+            
+        return {"success": True, "comment": comment_data}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/events/{event_id}/toggle-like")
+async def toggle_like(event_id: str, data: LikeToggle):
+    try:
+        # Etkinliği buluyoruz
+        event = await events_collection.find_one({"_id": ObjectId(event_id)})
+        if not event:
+            raise HTTPException(status_code=404, detail="Etkinlik bulunamadı")
+            
+        # 'likes' artık bir liste
+        likes_list = event.get("likes", [])
+        user_str_id = str(data.user_id)
+        
+        if user_str_id in likes_list:
+            # Kullanıcı zaten beğenmiş, ID'sini listeden siliyoruz
+            await events_collection.update_one(
+                {"_id": ObjectId(event_id)},
+                {"$pull": {"likes": user_str_id}}
+            )
+            liked = False
+        else:
+            # Kullanıcı ilk defa beğeniyor, ID'sini listeye ekliyoruz
+            await events_collection.update_one(
+                {"_id": ObjectId(event_id)},
+                {"$push": {"likes": user_str_id}}
+            )
+            liked = True
+            
+        # Güncellenmiş etkinliği çekip yeni listenin eleman sayısını buluyoruz
+        updated_event = await events_collection.find_one({"_id": ObjectId(event_id)})
+        updated_likes_list = updated_event.get("likes", [])
+        
+        return {
+            "success": True, 
+            "liked": liked, 
+            # 🎯 Beğeni sayısını front-end'e listenin uzunluğu olarak veriyoruz:
+            "likes_count": len(updated_likes_list),
+            "likes_list": updated_likes_list
+        }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

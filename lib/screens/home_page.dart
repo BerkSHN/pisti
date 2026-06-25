@@ -6,6 +6,7 @@ import 'package:pisti_app/theme/app_colors.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:pisti_app/services/api_service.dart';
+import 'package:image_picker/image_picker.dart';
 
 final _categories = [
   {'icon': '🏀', 'label': 'Spor'},
@@ -292,10 +293,11 @@ Future<void> _submitEvent() async {
     "category": _selectedCategoryLabel,
     "categoryColor": "#FF6B00",
     "joined": 1,
-    "likes": 0,
-    "comments": 0, 
+    "likes": [],
+    "comments": [], 
     "shares": 0,
     "creator": widget.username,
+    "owner_id": widget.userId,
     "avatar": (_currentUserImage != null && _currentUserImage!.isNotEmpty)
     ? _currentUserImage 
     : ((widget.username.trim().isNotEmpty)
@@ -531,12 +533,14 @@ void initState() {
                             final int currentCount = _joinedCounts[currentEventId] ?? int.tryParse(filtered[i]['joined'].toString()) ?? 0;
 
                             return _EventCard(
-                              key: ValueKey(currentEventId), 
+                              key: ValueKey(filtered[i]['_id'] ?? filtered[i]['id']),
                               event: filtered[i],
-                              eventId: currentEventId, 
+                              eventId: filtered[i]['_id'] ?? filtered[i]['id'],
                               userId: widget.userId, 
                               isAlreadyJoined: hasJoinedBefore, 
                               currentJoined: currentCount,
+                              currentUserImage: _currentUserImage,
+                              currentUsername: widget.username,
                               onJoinChanged: (joined) {
                                 _onJoinChanged(currentEventId, joined);
                                 setState(() {
@@ -1378,6 +1382,8 @@ class _EventCard extends StatefulWidget {
   final String userId;
   final String eventId;
   final bool isAlreadyJoined;
+  final String currentUsername;
+  final String? currentUserImage;
 
   const _EventCard({
     super.key,
@@ -1387,6 +1393,8 @@ class _EventCard extends StatefulWidget {
     required this.userId,
     required this.eventId,
     required this.isAlreadyJoined,
+    required this.currentUsername,
+    this.currentUserImage,
   });
 
   @override
@@ -1405,6 +1413,9 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
   List<Map<String, dynamic>> _comments = [];
   bool _showComments = false;
   final _commentController = TextEditingController();
+  // 🎯 Sadece senin etkinliklerine fotoğraf eklemek için gerekli değişkenler
+  String? _currentImageUrl;
+  bool _isUploading = false;
 
   Color _parseHexColor(String? hexString) {
     if (hexString == null || hexString.isEmpty) {
@@ -1421,7 +1432,17 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
   void initState() {
     super.initState();
     _joined = widget.isAlreadyJoined;
-    _likeCount = int.parse(widget.event['likes'].toString());
+    _currentImageUrl = widget.event['imageUrl'] ?? widget.event['image_url'];
+    final List<dynamic> likesList = widget.event['likes'] is List ? widget.event['likes'] : [];
+    
+    // Beğeni sayısı listenin uzunluğudur
+    _likeCount = likesList.length;
+    
+    // Beğenip beğenmediğimiz kullanıcının ID'sinin listede olup olmamasına bağlıdır
+    _liked = likesList.contains(widget.userId);
+    if (widget.event['comments'] is List) {
+      _comments = List<Map<String, dynamic>>.from(widget.event['comments']);
+    }
     _likeAnim = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 300),
@@ -1432,6 +1453,45 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
     ]).animate(CurvedAnimation(parent: _likeAnim, curve: Curves.easeInOut));
   }
 
+  // 🎯 Galeriden fotoğraf seçip sunucuya gönderen fonksiyon
+  // 🎯 Güncellenmiş temiz fonksiyon: Galeriden fotoğraf seçip ApiService'e paslar
+  Future<void> _uploadEventPhoto() async {
+    final ImagePicker picker = ImagePicker();
+    try {
+      final XFile? image = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 50, // Sıkıştırma oranı
+      );
+
+      if (image == null) return;
+
+      setState(() => _isUploading = true);
+
+      final bytes = await image.readAsBytes();
+      final String base64Image = base64Encode(bytes);
+
+      // 🎯 İşte oluşturduğumuz ApiService bağlantısını burada çağırıyoruz:
+      final bool success = await ApiService.updateEventImage(widget.eventId, base64Image);
+
+      if (success) {
+        setState(() {
+          _currentImageUrl = base64Image;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Etkinlik fotoğrafı başarıyla güncellendi! ✨"), backgroundColor: kPrimary),
+        );
+      } else {
+        throw Exception();
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Fotoğraf yüklenirken bir hata oluştu."), backgroundColor: Colors.redAccent),
+      );
+    } finally {
+      setState(() => _isUploading = false);
+    }
+  }
+
   @override
   void dispose() {
     _likeAnim.dispose();
@@ -1440,22 +1500,69 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
   }
 
   @override
+  @override
   void didUpdateWidget(covariant _EventCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isAlreadyJoined != oldWidget.isAlreadyJoined) {
+    
+    if (widget.event['comments'] != oldWidget.event['comments']) {
       setState(() {
-        _joined = widget.isAlreadyJoined; 
+        if (widget.event['comments'] is List) {
+          _comments = List<Map<String, dynamic>>.from(widget.event['comments']);
+        } else {
+          _comments = [];
+        }
       });
     }
+
+    final newImg = widget.event['imageUrl'] ?? widget.event['image_url'];
+    final oldImg = oldWidget.event['imageUrl'] ?? oldWidget.event['image_url'];
+    if (newImg != oldImg) {
+      setState(() {
+        _currentImageUrl = newImg;
+      });
+    }
+
+    // 🎯 DEĞİŞTİ: Yenileme sonrası gelen güncel likes listesine göre durumu eşitliyoruz
+    if (widget.event['likes'] != oldWidget.event['likes']) {
+      final List<dynamic> likesList = widget.event['likes'] is List ? widget.event['likes'] : [];
+      setState(() {
+        _likeCount = likesList.length;
+        _liked = likesList.contains(widget.userId);
+      });
+    }
+    if (widget.event['creator'] != oldWidget.event['creator']) {
+      setState(() {
+        // Kartın üst sınıftan gelen güncel veriyi okumasını garanti ediyoruz
+        widget.event['creator'] = widget.event['creator'];
+      });
+  }
   }
 
-  void _toggleLike() {
+  Future<void> _toggleLike() async {
+    _likeAnim.forward(from: 0.0);
+    
+    // Optimistic UI: Kullanıcıya anlık tepki ver
     setState(() {
       _liked = !_liked;
       _likeCount += _liked ? 1 : -1;
     });
-    _likeAnim.forward(from: 0);
-    HapticFeedback.lightImpact();
+
+    // API çağrısı
+    final res = await ApiService.toggleLike(widget.eventId, widget.userId);
+    
+    if (res == null || res["success"] != true) {
+      // Hata varsa yerel işlemi geri al
+      setState(() {
+        _liked = !_liked;
+        _likeCount += _liked ? 1 : -1;
+      });
+    } else {
+      // 🎯 Sunucudan dönen kesin len(likes) ve liked durumunu alıp eşitliyoruz
+      setState(() {
+        _likeCount = res["likes_count"] ?? _likeCount;
+        _liked = res["liked"] ?? _liked;
+      });
+    }
   }
 
   // 🎯 YENİ: Yorum bölümünü aç/kapat
@@ -1467,19 +1574,30 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
   }
 
   // 🎯 YENİ: Yorum gönder
-  void _submitComment() {
+  Future<void> _submitComment() async {
     final text = _commentController.text.trim();
     if (text.isEmpty) return;
-
-    setState(() {
-      _comments.add({
-        'author': 'Sen',
-        'text': text,
-        'time': 'Şimdi',
-      });
-    });
+    
     _commentController.clear();
-    HapticFeedback.lightImpact();
+
+    final String currentLoggedUserAvatar = widget.currentUserImage ?? '';
+
+    // 🎯 widget.currentUserAvatar (veya sende hangi isimdeyse) parametresini ekledik
+    final res = await ApiService.addComment(
+      widget.eventId, 
+      widget.userId, 
+      widget.currentUsername, 
+      currentLoggedUserAvatar, // Giriş yapan kullanıcının güncel profil resmi değişkenini buraya veriyoruz
+      text,
+    );
+    
+    if (res != null && res["success"] == true) {
+      setState(() {
+        if (res["comment"] is Map) {
+          _comments.add(Map<String, dynamic>.from(res["comment"]));
+        }
+      });
+    }
   }
 
 void _toggleJoin(bool isFull) async {
@@ -1546,6 +1664,7 @@ void _toggleJoin(bool isFull) async {
     final pct = (joined / max).clamp(0.0, 1.0);
     final isFull = joined >= max;
     final tags = List<String>.from(e['tags'] ?? []); 
+    final bool isMyEvent = widget.event['creator'] == widget.currentUsername;
 
     final catColor = _parseHexColor(e['categoryColor']?.toString()); 
     final avatarColor = _parseHexColor(e['avatarColor']?.toString());
@@ -1625,6 +1744,7 @@ void _toggleJoin(bool isFull) async {
                     ],
                   ),
                 ),
+               
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
@@ -1699,7 +1819,9 @@ void _toggleJoin(bool isFull) async {
               ],
             ),
           ),
-
+          
+          
+          
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
             child: Text(
@@ -1709,6 +1831,7 @@ void _toggleJoin(bool isFull) async {
               overflow: TextOverflow.ellipsis,
             ),
           ),
+
 
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
@@ -1984,27 +2107,49 @@ void _toggleJoin(bool isFull) async {
   }
 
   // 🎯 YENİ: Tek yorum satırı widget'ı
+  // 🎯 GÜNCELLENDİ: MongoDB'den gelen username ve created_at alanlarına göre uyarlandı
   Widget _buildCommentItem(Map<String, dynamic> comment) {
+    final String commentAuthor = (comment['username'] ?? comment['author'] ?? 'Anonim').toString();
+    final String commentTime = (comment['created_at'] ?? comment['time'] ?? 'Şimdi').toString();
+    final String commentText = (comment['text'] ?? '').toString();
+    
+    // 🎯 YENİ: Yorumun içinden gelen profil resmini okuyoruz
+    final String? commentAvatar = comment['avatar'] as String?;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // 🎯 PROFİL FOTOĞRAFI ALANI GÜNCELLENDİ
           Container(
-            width: 30, height: 30,
+            width: 32, height: 32,
             decoration: BoxDecoration(
               color: kPrimary.withValues(alpha: 0.2),
               shape: BoxShape.circle,
             ),
-            child: Center(
-              child: Text(
-                (comment['author'] as String)[0].toUpperCase(),
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: kPrimary,
-                ),
-              ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              // Eğer yorumu atan kişinin fotoğrafı varsa base64 resmi çözüp basıyoruz
+              child: commentAvatar != null && commentAvatar.length > 5
+                  ? Image.memory(
+                      base64Decode(commentAvatar),
+                      fit: BoxFit.cover,
+                      width: 32, height: 32,
+                      errorBuilder: (context, error, stackTrace) => Center(
+                        child: Text(
+                          commentAuthor.isNotEmpty ? commentAuthor[0].toUpperCase() : 'A',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: kPrimary),
+                        ),
+                      ),
+                    )
+                  // Eğer profil fotoğrafı yoksa eski harfli sistem devreye giriyor
+                  : Center(
+                      child: Text(
+                        commentAuthor.isNotEmpty ? commentAuthor[0].toUpperCase() : 'A',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: kPrimary),
+                      ),
+                    ),
             ),
           ),
           const SizedBox(width: 10),
@@ -2022,23 +2167,19 @@ void _toggleJoin(bool isFull) async {
                   Row(
                     children: [
                       Text(
-                        comment['author'] as String,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          color: kText,
-                        ),
+                        commentAuthor,
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: kText),
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        comment['time'] as String,
+                        commentTime.length > 16 ? commentTime.substring(11, 16) : commentTime,
                         style: TextStyle(fontSize: 10, color: kTextSub),
                       ),
                     ],
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    comment['text'] as String,
+                    commentText,
                     style: TextStyle(fontSize: 13, color: kText.withValues(alpha: 0.8)),
                   ),
                 ],
@@ -2051,55 +2192,80 @@ void _toggleJoin(bool isFull) async {
   }
 
   Widget _buildImageArea(Map<String, dynamic> e, Color catColor) {
-    return Stack(
-      children: [
-        Container(
-          height: 160,
-          decoration: BoxDecoration(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            gradient: LinearGradient(
-              colors: [
-                catColor.withValues(alpha: 0.3),
-                kCard,
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-          child: Stack(
-            children: [
-              Positioned(
-                right: -20, top: -20,
-                child: Container(
-                  width: 120, height: 120,
-                  decoration: BoxDecoration(
-                    color: catColor.withValues(alpha: 0.15),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
-              Positioned(
-                left: -30, bottom: -30,
-                child: Container(
-                  width: 100, height: 100,
-                  decoration: BoxDecoration(
-                    color: catColor.withValues(alpha: 0.10),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
-              Center(
-                child: Text(
-                  e['emoji'] as String,
-                  style: const TextStyle(fontSize: 64),
-                ),
-              ),
-            ],
-          ),
+  // 🎯 Giriş yapan kişi ile bu etkinliği oluşturan kişi aynı mı kontrolü
+  // creator alanında username saklandığı için doğrudan widget'taki değerle kıyaslıyoruz
+  bool isMyEvent = widget.event['owner_id'] == widget.userId;
+
+  return Stack(
+    children: [
+      Container(
+        height: 160,
+        width: double.infinity,
+        decoration: const BoxDecoration(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
+        child: ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          // 🎯 7. ADIM ENTEGRASYONU: Eğer fotoğraf yüklenmişse base64 resmi göster, yoksa eski emojili tasarımı koru
+          child: _currentImageUrl != null && _currentImageUrl!.isNotEmpty
+              ? Image.memory(
+                  base64Decode(_currentImageUrl!),
+                  width: double.infinity,
+                  height: 160,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => const SizedBox(),
+                )
+              : Stack(
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            catColor.withValues(alpha: 0.3),
+                            kCard,
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      right: -20, top: -20,
+                      child: Container(
+                        width: 120, height: 120,
+                        decoration: BoxDecoration(
+                          color: catColor.withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: -30, bottom: -30,
+                      child: Container(
+                        width: 100, height: 100,
+                        decoration: BoxDecoration(
+                          color: catColor.withValues(alpha: 0.10),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                    Center(
+                      child: Text(
+                        e['emoji'] as String,
+                        style: const TextStyle(fontSize: 64),
+                      ),
+                    ),
+                  ],
+                ),
+        ),
+      ),
+      
+      // 🎯 6. ADIM ENTEGRASYONU: Fotoğraf butonunu sadece kendi paylaştığımız etkinliklerde göster
+      if (isMyEvent)
         Positioned(
           top: 10, right: 10,
           child: GestureDetector(
+            onTap: _isUploading ? null : _uploadEventPhoto, // Tıklanınca fotoğraf yükleme fonksiyonunu çağırır
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
@@ -2110,18 +2276,26 @@ void _toggleJoin(bool isFull) async {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.add_photo_alternate_outlined, size: 14, color: catColor),
+                  _isUploading
+                      ? SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: catColor),
+                        )
+                      : Icon(Icons.add_photo_alternate_outlined, size: 14, color: catColor),
                   const SizedBox(width: 4),
-                  Text('Fotoğraf',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: catColor)),
+                  Text(
+                    _isUploading ? 'Yükleniyor...' : 'Fotoğraf',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: catColor),
+                  ),
                 ],
               ),
             ),
           ),
         ),
-      ],
-    );
-  }
+    ],
+  );
+}
 }
 
 // ─── SHARE SHEET ──────────────────────────────────────────────────────────────

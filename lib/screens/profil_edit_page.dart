@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart'; // 🎯 Paket eklendi
 import 'package:pisti_app/theme/app_colors.dart';
 import 'package:pisti_app/services/api_service.dart';
@@ -117,13 +118,15 @@ Future<void> _pickImage() async {
       final String? oldPassword = _oldPasswordController.text.trim().isNotEmpty ? _oldPasswordController.text.trim() : null;
       final String? newPassword = _newPasswordController.text.trim().isNotEmpty ? _newPasswordController.text.trim() : null;
 
+      // FastAPI backend'in yaptığı gibi kullanıcı adını küçük harfe çevirip boşlukları siliyoruz
+      final String processedUsername = _usernameController.text.trim().toLowerCase().replaceAll(" ", "");
       final result = await ApiService.updateProfile(
         userId: widget.userId,
         fullName: _fullNameController.text.trim(),
-        username: _usernameController.text,
+        username: processedUsername, // 🎯 Temizlenmiş username gidiyor
         email: _emailController.text.trim(),
         bio: _bioController.text.trim(),
-        profileImage: _base64Image, // 🎯 Yeni resmi apiye yolluyoruz
+        profileImage: _base64Image, 
         oldPassword: oldPassword,
         newPassword: newPassword,
       );
@@ -131,6 +134,21 @@ Future<void> _pickImage() async {
       if (!mounted) return;
 
       if (result["success"] == true) {
+        
+        // 🎯 YENİ FASTAPI METODUNA UYGUN GÜNCELLEME:
+        try {
+          await http.put(
+            Uri.parse('${ApiService.baseUrl}/events/update-creator/${widget.userId}'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'creator': processedUsername, // 🎯 FastAPI'ye giden temizlenmiş veri
+              'avatar': _base64Image,
+            }),
+          );
+        } catch (e) {
+          debugPrint("Etkinliklerin profil bilgileri güncellenirken hata oluştu: $e");
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Profil başarıyla güncellendi ✨"),
@@ -140,10 +158,10 @@ Future<void> _pickImage() async {
         
         final Map<String, dynamic> localUpdatedMap = {
           "full_name": _fullNameController.text.trim(),
-          "username": _usernameController.text.trim(),
+          "username": processedUsername, // 🎯 Geri dönerken de temiz halini aktarıyoruz
           "email": _emailController.text.trim(),
           "bio": _bioController.text.trim(),
-          "profile_image": _base64Image, // 🎯 Geri dönerken resmi de fırlatıyoruz
+          "profile_image": _base64Image, 
         };
 
         Navigator.pop(context, localUpdatedMap); 

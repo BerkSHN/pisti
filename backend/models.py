@@ -11,12 +11,13 @@ class Event(BaseModel):
     max: int
     category: str
     creator: str
+    owner_id: str
     avatar: str
     avatarColor: str
     desc: str
     tags: List[str]
-    likes: int
-    comments: int
+    likes: List[str]
+    comments: List[str]
     shares: int
     imageUrl: Optional[str] = None
     categoryColor: str
