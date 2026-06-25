@@ -1408,6 +1408,7 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
   late int _likeCount;
   late AnimationController _likeAnim;
   late Animation<double> _likeScale;
+  late int _joinedCount;
 
   // 🎯 YENİ: Yorum listesi ve yorum sayacı
   List<Map<String, dynamic>> _comments = [];
@@ -1432,6 +1433,7 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
   void initState() {
     super.initState();
     _joined = widget.isAlreadyJoined;
+    _joinedCount = widget.currentJoined;
     _currentImageUrl = widget.event['imageUrl'] ?? widget.event['image_url'];
     final List<dynamic> likesList = widget.event['likes'] is List ? widget.event['likes'] : [];
     
@@ -1500,7 +1502,6 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
   }
 
   @override
-  @override
   void didUpdateWidget(covariant _EventCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     
@@ -1535,6 +1536,16 @@ class _EventCardState extends State<_EventCard> with SingleTickerProviderStateMi
         // Kartın üst sınıftan gelen güncel veriyi okumasını garanti ediyoruz
         widget.event['creator'] = widget.event['creator'];
       });
+  }
+    if (widget.isAlreadyJoined != oldWidget.isAlreadyJoined) {
+    setState(() {
+      _joined = widget.isAlreadyJoined;
+    });
+  }
+  if (widget.currentJoined != oldWidget.currentJoined) {
+    setState(() {
+      _joinedCount = widget.currentJoined;
+    });
   }
   }
 
@@ -1608,6 +1619,7 @@ void _toggleJoin(bool isFull) async {
   widget.onJoinChanged(newJoined);
   setState(() {
     _joined = newJoined;
+    _joinedCount = newJoined ? _joinedCount + 1 : (_joinedCount - 1).clamp(0, 9999);
   });
 
   if (newJoined) {
@@ -1622,6 +1634,7 @@ void _toggleJoin(bool isFull) async {
       widget.onJoinChanged(!newJoined);
       setState(() {
         _joined = !newJoined;
+        _joinedCount = _joinedCount - 1;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(result["message"] ?? "Veritabanına kaydedilemedi.")),
@@ -1639,6 +1652,7 @@ void _toggleJoin(bool isFull) async {
       widget.onJoinChanged(!newJoined);
       setState(() {
         _joined = !newJoined;
+        _joinedCount = _joinedCount + 1;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(result["message"] ?? "Veritabanından silinemedi.")),
@@ -1878,7 +1892,7 @@ void _toggleJoin(bool isFull) async {
                         ),
                       ),
                       child: Text(
-                        '$joined / $max katılımcı',
+                        '$_joinedCount / $max katılımcı',
                         key: ValueKey(joined),
                         style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: kText),
                       ),
